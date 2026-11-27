@@ -100,6 +100,24 @@
     try { localStorage.setItem(CFG_KEY, JSON.stringify(state.cfg)); } catch (e) {}
   }
 
+  // 설정 링크(#sync=...)로 한 번에 연결: 주소와 PIN이 저장소에는 남지 않는다
+  function readHashSync() {
+    const m = location.hash.match(/sync=([A-Za-z0-9_\-+/=]+)/);
+    if (!m) return false;
+    try {
+      let b = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b.length % 4) b += '=';
+      const o = JSON.parse(decodeURIComponent(escape(atob(b))));
+      if (o && o.u && o.p) {
+        state.cfg = { url: String(o.u), pin: String(o.p) };
+        saveCfg();
+        history.replaceState(null, '', location.pathname + location.search);
+        return true;
+      }
+    } catch (e) { /* 잘못된 링크는 무시 */ }
+    return false;
+  }
+
   const hasRemote = () => !!(state.cfg.url && state.cfg.pin);
 
   async function remoteList() {
@@ -267,7 +285,7 @@
     document.querySelectorAll('.zone-hit').forEach(function (h) {
       h.classList.toggle('active', h.dataset.zone === z);
     });
-    $('newZone').value = z || 'board';
+    $('newZone').value = z || 'store';
 
     // 단무지 말풍선 후보 갱신
     refreshBubblePool();
@@ -993,6 +1011,7 @@
   /* ─────────────────────────── 시작 ─────────────────────────── */
   function boot() {
     loadCfg();
+    readHashSync();
     buildBackground();
     initUI();
 

@@ -280,37 +280,29 @@ input,select{font-family:inherit;font-size:15px}
 @media (max-width:880px){
   body{overflow:hidden}
   .app{padding:0 10px;height:100dvh}
-  .stage{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:0}
-  .office-wrap{gap:6px;flex:0 0 auto}
-  .office-frame{max-height:none}
+  .stage{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .office-wrap{flex:0 0 auto;gap:6px}
+  .office-frame{max-height:none;border-radius:12px}
   .legend{gap:5px}
   .legend-chip{padding:4px 8px;font-size:11px}
   .hint{display:none}
   .panel{
-    position:relative;
+    flex:1 1 auto;min-height:0;
     border-radius:16px 16px 0 0;
-    margin:8px -10px 0;
-    padding:8px 12px 12px;
-    max-height:none;
+    margin:0 -10px;padding:10px 12px 12px;
   }
-  .panel.collapsed{
-    position:absolute;left:0;right:0;bottom:0;
-    border-radius:16px 16px 0 0;
-    padding:10px 14px 16px;
-    max-height:56dvh;
-    box-shadow:0 -14px 40px rgba(0,0,0,.5);
-    transform:translateY(calc(100% - 52px));
-    transition:transform .22s ease;
-  }
-  .panel.collapsed.open{transform:translateY(0)}
-  .panel-grip{
-    display:block;width:44px;height:4px;border-radius:99px;background:#4a5478;
-    margin:0 auto 8px;
-  }
+  .panel.collapsed{position:static;transform:none;max-height:none}
+  .panel-grip{display:none}
   .panel-head h2{font-size:14px}
   .stats{gap:6px}
   .stat{padding:5px 3px}
   .stat b{font-size:15px}
   .task-list{max-height:none}
-  .foot{font-size:10px;padding:4px 2px 6px}
+  .foot{display:none}
+}
+
+@media (max-width:400px){
+  .stat b{font-size:14px}
+  .brand h1{font-size:15px}
+  .legend-chip{font-size:10.5px;padding:3px 7px}
 }

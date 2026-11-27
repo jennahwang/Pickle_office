@@ -882,11 +882,8 @@
   }
 
   /* ─────────────────────────── UI 배선 ─────────────────────────── */
-  function openSheet(open) {
-    const panel = $('panel');
-    if (window.innerWidth > 880) return;
-    panel.classList.add('collapsed');
-    panel.classList.toggle('open', open !== false);
+  function openSheet() {
+    // 모바일에서는 현황판이 맵 아래에 항상 펼쳐져 있다.
   }
 
   function initUI() {
@@ -984,22 +981,8 @@
       }
     });
 
-    // 모바일 시트: 처음엔 접힌 상태
-    if (window.innerWidth <= 880) {
-      const p = $('panel');
-      p.classList.add('collapsed');
-      // 접힌 헤더만 보이도록 상태 표시
-    }
-
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { $('settingsModal').hidden = true; }
-    });
-
-    window.addEventListener('resize', function () {
-      if (window.innerWidth > 880) {
-        const p = $('panel');
-        p.classList.remove('collapsed', 'open');
-      }
     });
 
     // 다른 탭에서 돌아오면 최신 상태로

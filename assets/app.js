@@ -10,7 +10,7 @@
 
   const ZONES = {
     store: { x: 12, y: 100, w: 92, h: 86, label: '매장 업무', name: '매장 업무 존', spot: { x: 84, y: 136 } },
-    board: { x: 110, y: 26, w: 98, h: 66, label: '할 일 현황판', name: '현황판 존', spot: { x: 150, y: 94 } },
+    board: { x: 110, y: 26, w: 98, h: 66, label: '할 일 현황판', name: '현황판 존', spot: { x: 150, y: 88 } },
     life: { x: 110, y: 100, w: 198, h: 86, label: '일상·위스키 라운지', name: '일상·위스키 라운지', spot: { x: 236, y: 150 } },
     brk: { x: 12, y: 26, w: 92, h: 66, label: '휴식·커피', name: '휴식·커피 코너', spot: { x: 86, y: 80 } }
   };
@@ -29,7 +29,7 @@
     { x: 12, y: 138, w: 62, h: 26 },
     { x: 84, y: 102, w: 18, h: 22 },
     // 라운지
-    { x: 204, y: 98, w: 52, h: 26 },
+    { x: 204, y: 100, w: 52, h: 28 },
     { x: 116, y: 156, w: 64, h: 30 },
     { x: 130, y: 130, w: 30, h: 18 },
     { x: 194, y: 144, w: 10, h: 12 },
@@ -377,8 +377,9 @@
       }
     }
     // 라운지 나무 바닥
-    r(110, 96, 198, 92, C.woodA);
-    for (let y = 96; y < 188; y += 7) {
+    r(110, 100, 198, 88, C.woodA);
+    r(110, 100, 198, 2, '#4b3327');
+    for (let y = 102; y < 188; y += 7) {
       r(110, y, 198, 1, C.woodB);
       r(110 + (y % 14 === 0 ? 24 : 60), y, 1, 7, C.woodLine);
       r(110 + (y % 14 === 0 ? 130 : 96), y, 1, 7, C.woodLine);
@@ -412,9 +413,10 @@
     r(62, 33, 8, 6, '#8a6a4a');
     r(62, 33, 8, 1, '#a1835f');
     // 스툴
-    r(14, 74, 12, 4, '#8a6a4a');
-    r(16, 78, 2, 6, C.metalDark);
-    r(23, 78, 2, 6, C.metalDark);
+    r(16, 74, 12, 3, '#8a6a4a');
+    r(16, 77, 12, 1, '#6b4f35');
+    r(18, 78, 2, 5, C.metalDark);
+    r(24, 78, 2, 5, C.metalDark);
 
     /* ── 할 일 현황판 (중앙) ── */
     r(116, 26, 86, 48, '#2b3150');            // 프레임
@@ -498,21 +500,21 @@
     r(134, 148, 2, 4, C.deskFront);
     r(158, 148, 2, 4, C.deskFront);
     // 위스키 진열장
-    r(204, 98, 52, 26, '#6b4a30');
-    r(204, 98, 52, 2, '#8a6340');
-    r(206, 104, 48, 1, '#4d3323');
-    r(206, 114, 48, 1, '#4d3323');
+    r(204, 102, 52, 26, '#6b4a30');
+    r(204, 102, 52, 2, '#8a6340');
+    r(206, 108, 48, 1, '#4d3323');
+    r(206, 118, 48, 1, '#4d3323');
     for (let i = 0; i < 7; i++) {
       const bxp = 208 + i * 6;
       const hgt = 6 + ((i * 5) % 4);
-      r(bxp, 104 - hgt, 3, hgt, i % 3 === 0 ? '#4f8f5a' : (i % 3 === 1 ? C.whisky : '#b86b3a'));
-      r(bxp, 103 - hgt, 1, 2, '#2b1f14');
+      r(bxp, 108 - hgt, 3, hgt, i % 3 === 0 ? '#4f8f5a' : (i % 3 === 1 ? C.whisky : '#b86b3a'));
+      r(bxp, 107 - hgt, 1, 2, '#2b1f14');
     }
     for (let i = 0; i < 5; i++) {
       const bxp = 210 + i * 8;
       const hgt = 5 + ((i * 3) % 4);
-      r(bxp, 115 - hgt, 4, hgt, i % 2 ? '#c9a26a' : '#8a4a56');
-      r(bxp, 114 - hgt, 1, 2, '#2b1f14');
+      r(bxp, 119 - hgt, 4, hgt, i % 2 ? '#c9a26a' : '#8a4a56');
+      r(bxp, 118 - hgt, 1, 2, '#2b1f14');
     }
     // 스탠드 조명
     r(196, 144, 8, 3, '#d9c9a0');
@@ -532,10 +534,11 @@
     r(294, 156, 16, 7, C.plantDark);
     r(300, 152, 6, 5, C.plant);
     // 벽시계
-    r(282, 30, 10, 10, '#3a3350');
-    r(283, 31, 8, 8, C.white);
-    r(286, 33, 1, 3, '#333');
-    r(287, 35, 2, 1, '#333');
+    r(281, 29, 12, 12, '#3a3350');
+    r(282, 30, 10, 10, '#e8e3d2');
+    r(286, 32, 1, 4, '#3a3350');
+    r(287, 35, 3, 1, '#3a3350');
+    r(286, 30, 1, 1, '#b9b2a0');
     // 벽 액자 2
     r(176, 28, 8, 10, '#3a3350');
     r(177, 29, 6, 8, '#6b8fb8');
@@ -545,8 +548,8 @@
 
   /* ── 캐릭터 ── */
   const actors = {
-    danmuji: { x: 92, y: 96, dir: 1, target: null, state: 'idle', t: 0, next: 2.5, zone: 'board', bubble: '', bubbleT: 0 },
-    user: { x: 168, y: 100, dir: -1, target: null, state: 'idle', t: 0, next: 4.0, zone: 'board', bubble: '', bubbleT: 0 }
+    danmuji: { x: 128, y: 118, dir: 1, target: null, state: 'idle', t: 0, next: 2.5, zone: 'board', bubble: '', bubbleT: 0 },
+    user: { x: 178, y: 120, dir: -1, target: null, state: 'idle', t: 0, next: 4.0, zone: 'board', bubble: '', bubbleT: 0 }
   };
 
   function drawDanmuji(a, time) {
@@ -1004,6 +1007,10 @@
 
     render();
     requestAnimationFrame(frame);
+
+    setTimeout(function () {
+      bubbleSay('danmuji', BUBBLE_POOLS.danmuji[0] || '문 열었어요, 오늘도 화이팅!');
+    }, 900);
 
     if (hasRemote()) {
       setSync(null, '연결 중');

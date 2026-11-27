@@ -70,7 +70,7 @@
     { id: 'demo2', zone: 'store', title: '샘플 · 재고 정리', status: 'pending', due: '' },
     { id: 'demo3', zone: 'board', title: '샘플 · 주간 할 일 정리', status: 'active', due: '' },
     { id: 'demo4', zone: 'life', title: '샘플 · 라운지 병 정리', status: 'active', due: '' },
-    { id: 'demo5', zone: 'brk', title: '샘플 · 커피 사 오기', status: 'done', due: '' }
+    { id: 'demo5', zone: 'break', title: '샘플 · 커피 사 오기', status: 'done', due: '' }
   ];
 
   /* ─────────────────────── 저장소 / API ─────────────────────── */
@@ -181,7 +181,8 @@
   function zoneTag(zone) {
     const span = document.createElement('span');
     span.className = 'tag zone-' + zone;
-    span.textContent = ZONES[ZONE_OF[zone]].label;
+    const z = ZONES[ZONE_OF[zone] || 'board'];
+    span.textContent = z ? z.label : zone;
     return span;
   }
 

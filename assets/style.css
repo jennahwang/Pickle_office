@@ -102,7 +102,12 @@ input,select{font-family:inherit;font-size:15px}
   touch-action:manipulation;
 }
 .overlay{position:absolute;inset:0;pointer-events:none}
-.zone-hit{position:absolute;pointer-events:auto;cursor:pointer;border-radius:6px}
+.zone-hit{
+  position:absolute;pointer-events:auto;cursor:pointer;border-radius:6px;
+  appearance:none;-webkit-appearance:none;
+  background:transparent;border:0;padding:0;margin:0;
+  color:transparent;font-size:0;line-height:0;
+}
 .zone-hit:hover{background:rgba(107,224,255,.07);box-shadow:inset 0 0 0 1px rgba(107,224,255,.35)}
 .zone-hit.active{background:rgba(242,210,31,.08);box-shadow:inset 0 0 0 1px rgba(242,210,31,.5)}
 .zone-label{

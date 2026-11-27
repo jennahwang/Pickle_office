@@ -1026,7 +1026,7 @@
     // 앞머리 + 옆머리 (얼굴을 감싸는 단발)
     ctx.fillStyle = hair;
     ctx.fillRect(-4, -20, 8, 2);
-    ctx.fillRect(1, -18, 3, 1);          // 옆으로 넘긴 앞머리 결
+    ctx.fillRect(-4, -18, 6, 1);         // 한쪽으로 넘긴 앞머리 끝
     ctx.fillRect(-6, -19, 2, 10);
     ctx.fillRect(4, -19, 2, 10);
 

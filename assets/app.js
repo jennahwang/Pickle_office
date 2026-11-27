@@ -83,7 +83,7 @@
   // 동기화 전(로컬)에 쓰는 기본 멤버. 실제 이름은 시트의 members 탭에서 온다.
   const DEFAULT_MEMBERS = [
     { id: 'danmuji', name: '단무지', role: 'ai', color: '#facc15', shape: 'ㄷ', zone: 'board', statusText: '대기 중' },
-    { id: 'owner', name: '나', role: 'owner', color: '#7fb3ff', shape: 'mgr', zone: 'board', statusText: '확인 중' }
+    { id: 'owner', name: '람사장', role: 'owner', color: '#7fb3ff', shape: 'fm', zone: 'board', statusText: '확인 중' }
   ];
 
   /* ─────────────────────── 저장소 / API ─────────────────────── */
@@ -194,7 +194,7 @@
     }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
   }
 
-  const SHAPES = { 'ㄷ': 1, mgr: 1, sq: 1, ci: 1 };
+  const SHAPES = { 'ㄷ': 1, mgr: 1, fm: 1, female: 1, sq: 1, ci: 1 };
   function normalizeMembers(list) {
     const out = (list || []).filter(function (m) { return m && m.name; }).map(function (m, i) {
       const color = /^#[0-9a-fA-F]{6}$/.test(String(m.color || '')) ? String(m.color) : '#8fb8ff';
@@ -631,7 +631,7 @@
     const owner = ownerMember();
     const r = {
       id: uid(),
-      sender: owner ? owner.name : '나',
+      sender: owner ? owner.name : '람사장',
       target: target,
       message: msg.slice(0, 300),
       status: 'pending',
@@ -933,58 +933,117 @@
     ctx.restore();
   }
 
-  function drawMgr(a, color, time) {
+  // 주인 캐릭터 — 여성 픽셀 캐릭터
+  // 어깨까지 오는 밤색 단발 · 크림빛 로즈 니트 · 와인색 플리츠 스커트 · 멤버 색 벨트
+  // shape 값 'mgr'(기존) · 'fm' · 'female' 모두 이 모양으로 그린다.
+  function drawOwner(a, color, time) {
     const x = Math.round(a.x), y = Math.round(a.y);
     const walking = a.state === 'walk';
     const step = walking ? Math.floor(time * 8) % 2 : 0;
-    const bob = walking ? (step ? 1 : 0) : 0;
+    const bob = walking ? (step ? 1 : 0) : (Math.sin(time * 1.7) > 0.82 ? 1 : 0);
     const yy = y - bob;
-    const jacket = shade(color, 0.62);
-    const jacket2 = shade(color, 0.5);
+    const swingA = (walking && step) ? 1 : 0;   // 걸을 때 팔 흔들림
+    const swingB = (walking && !step) ? 1 : 0;
+
+    const hair = '#4a2f2c';        // 밤색 단발
+    const hairHi = '#74483a';
+    const skin = '#f4cdaa';
+    const blush = '#e9909c';
+    const lip = '#d4667a';
+    const knit = '#f6ded9';        // 크림빛 로즈 니트
+    const knitDark = '#e0bebc';
+    const skirt = '#5d3a4c';       // 와인색 스커트
+    const skirtHi = '#7a4f63';
+    const skirtLo = '#472c3b';
+    const shoe = '#241f2e';
+    const gold = '#e8c060';
+    const blink = (time % 4.4) < 0.12;
 
     ctx.save();
     ctx.translate(x, yy);
     if (a.dir < 0) ctx.scale(-1, 1);
 
+    // 그림자
     ctx.fillStyle = 'rgba(0,0,0,.28)';
     ctx.fillRect(-5, 0, 11, 2);
-    // 다리
-    ctx.fillStyle = '#1e2338';
-    ctx.fillRect(-4 + (step ? 1 : 0), -5, 3, 6);
-    ctx.fillRect(1 - (step ? 1 : 0), -5, 3, 6);
-    ctx.fillStyle = '#0f1220';
-    ctx.fillRect(-4 + (step ? 1 : 0), -1, 4, 1);
-    ctx.fillRect(1 - (step ? 1 : 0), -1, 4, 1);
-    // 상의 (재킷)
-    ctx.fillStyle = jacket;
-    ctx.fillRect(-5, -12, 10, 8);
-    ctx.fillStyle = shade(color, 0.8);
-    ctx.fillRect(-5, -12, 2, 8);
-    // 셔츠 + 넥타이
-    ctx.fillStyle = '#e8ecf7';
-    ctx.fillRect(-1, -12, 3, 6);
-    ctx.fillStyle = '#d4574f';
-    ctx.fillRect(0, -11, 1, 4);
-    // 팔
-    ctx.fillStyle = jacket2;
-    ctx.fillRect(-6, -11, 2, 5 + (walking ? (step ? 1 : 0) : 0));
-    ctx.fillRect(4, -11, 2, 5 + (walking ? (step ? 0 : 1) : 0));
-    // 명찰
+
+    // 뒤로 흐르는 단발 (어깨 아래까지)
+    ctx.fillStyle = hair;
+    ctx.fillRect(-6, -20, 12, 13);
+    ctx.fillRect(-5, -21, 10, 1);
+    ctx.fillRect(-4, -22, 8, 1);
+    ctx.fillStyle = hairHi;
+    ctx.fillRect(-5, -19, 2, 1);
+    ctx.fillRect(-6, -17, 1, 3);
+
+    // 다리 + 힐
+    ctx.fillStyle = skin;
+    ctx.fillRect(-3 + step, -4, 2, 4);
+    ctx.fillRect(1 - step, -4, 2, 4);
+    ctx.fillStyle = shoe;
+    ctx.fillRect(-3 + step, -1, 2, 1);
+    ctx.fillRect(2 - step, -1, 2, 1);
+
+    // 와인색 플리츠 스커트
+    ctx.fillStyle = skirt;
+    ctx.fillRect(-5, -7, 10, 3);
+    ctx.fillStyle = skirtHi;
+    ctx.fillRect(-4, -7, 1, 3);
+    ctx.fillRect(-1, -7, 1, 3);
+    ctx.fillRect(2, -7, 1, 3);
+    ctx.fillStyle = skirtLo;
+    ctx.fillRect(-5, -5, 10, 1);
+
+    // 크림 니트 상의 + 소매
+    ctx.fillStyle = knit;
+    ctx.fillRect(-4, -12, 8, 4);
+    ctx.fillStyle = knitDark;
+    ctx.fillRect(-4, -12, 8, 1);
+    ctx.fillRect(-5, -12, 1, 4 + swingA);
+    ctx.fillRect(4, -12, 1, 4 + swingB);
+    ctx.fillStyle = '#c9a2a1';
+    ctx.fillRect(-5, -9, 1, 1);
+    ctx.fillRect(4, -9, 1, 1);
+
+    // 멤버 색 벨트 + 금 버클
     ctx.fillStyle = color;
-    ctx.fillRect(2, -11, 2, 2);
-    // 머리
-    ctx.fillStyle = '#f0c8a0';
+    ctx.fillRect(-5, -8, 10, 1);
+    ctx.fillStyle = shade(color, 1.3);
+    ctx.fillRect(-5, -8, 2, 1);
+    ctx.fillStyle = gold;
+    ctx.fillRect(0, -8, 1, 1);
+
+    // 목 + 가는 금 목걸이
+    ctx.fillStyle = skin;
+    ctx.fillRect(-1, -13, 2, 2);
+    ctx.fillStyle = gold;
+    ctx.fillRect(-1, -11, 3, 1);
+
+    // 얼굴
+    ctx.fillStyle = skin;
     ctx.fillRect(-4, -19, 8, 7);
-    ctx.fillStyle = '#23263a';
-    ctx.fillRect(-5, -21, 10, 4);
-    ctx.fillRect(-5, -18, 2, 4);
-    ctx.fillStyle = '#2e3250';
-    ctx.fillRect(-4, -18, 3, 1);
-    ctx.fillStyle = '#1b1f2e';
-    ctx.fillRect(-2, -16, 1, 2);
-    ctx.fillRect(2, -16, 1, 2);
-    ctx.fillStyle = '#d8a888';
-    ctx.fillRect(-1, -14, 3, 1);
+
+    // 앞머리 + 옆머리 (얼굴을 감싸는 단발)
+    ctx.fillStyle = hair;
+    ctx.fillRect(-4, -20, 8, 2);
+    ctx.fillRect(1, -18, 3, 1);          // 옆으로 넘긴 앞머리 결
+    ctx.fillRect(-6, -19, 2, 10);
+    ctx.fillRect(4, -19, 2, 10);
+
+    // 눈 · 볼 · 입술
+    ctx.fillStyle = '#2b1f2b';
+    if (blink) {
+      ctx.fillRect(-2, -16, 1, 1);
+      ctx.fillRect(1, -16, 1, 1);
+    } else {
+      ctx.fillRect(-2, -16, 1, 2);
+      ctx.fillRect(1, -16, 1, 2);
+    }
+    ctx.fillStyle = blush;
+    ctx.fillRect(-4, -14, 1, 1);
+    ctx.fillRect(3, -14, 1, 1);
+    ctx.fillStyle = lip;
+    ctx.fillRect(-1, -14, 2, 1);
     ctx.restore();
   }
 
@@ -1044,7 +1103,7 @@
     const m = a.member || {};
     const color = m.color || '#facc15';
     if (m.shape === 'ㄷ') drawD(a, color, time);
-    else if (m.shape === 'mgr') drawMgr(a, color, time);
+    else if (m.shape === 'mgr' || m.shape === 'fm' || m.shape === 'female') drawOwner(a, color, time);
     else drawBlob(a, color, m.shape || 'sq', time);
   }
 

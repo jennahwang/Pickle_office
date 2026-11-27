@@ -9,7 +9,7 @@
   const W = 320, H = 192;
 
   const ZONES = {
-    store: { x: 12, y: 100, w: 92, h: 86, label: '매장 업무', name: '매장 업무 존', spot: { x: 84, y: 136 } },
+    store: { x: 12, y: 100, w: 92, h: 86, label: '매장 업무', name: '매장 업무 존', spot: { x: 84, y: 136 }, labelY: 186 },
     board: { x: 110, y: 26, w: 98, h: 66, label: '할 일 현황판', name: '현황판 존', spot: { x: 150, y: 88 } },
     life: { x: 110, y: 100, w: 198, h: 86, label: '일상·위스키 라운지', name: '일상·위스키 라운지', spot: { x: 236, y: 150 } },
     brk: { x: 12, y: 26, w: 92, h: 66, label: '휴식·커피', name: '휴식·커피 코너', spot: { x: 86, y: 80 } }
@@ -812,7 +812,7 @@
       label.className = 'zone-label';
       label.textContent = z.label;
       label.style.left = ((z.x + z.w / 2) / W * 100) + '%';
-      label.style.top = ((z.y + 2) / H * 100) + '%';
+      label.style.top = ((z.labelY || z.y + 2) / H * 100) + '%';
       overlay.appendChild(label);
     });
 

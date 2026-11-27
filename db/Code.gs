@@ -1,157 +1,116 @@
 /**
  * 피클 오피스 · 할 일 동기화 API (Google Apps Script)
  *
- * 준비:
+ * 시트 구조 (탭 이름: tasks)
+ *   A id | B title | C zone | D status | E due | F note | G created | H updated
+ *   zone: store | board | life | break      status: active | pending | done
+ *
+ * 준비
  *  1) 구글 시트를 새로 만들고 확장 프로그램 > Apps Script 에 이 파일을 붙여 넣습니다.
- *  2) 프로젝트 설정 > 스크립트 속성에  PIN  = 원하는 숫자 PIN  을 추가합니다.
- *  3) 함수 목록에서 setup 을 한 번 실행합니다(시트 탭과 머리글이 만들어집니다).
- *  4) 배포 > 새 배포 > 유형: 웹 앱
- *       - 다음 사용자로 실행: 나
- *       - 액세스 권한: 모든 사용자
+ *  2) 아래 SHEET_ID 를 채웁니다. (시트 주소의 /d/{여기}/edit)
+ *     시트에 붙인(컨테이너 바인딩) 스크립트라면 비워 두면 현재 시트를 씁니다.
+ *  3) PIN 을 원하는 숫자로 바꿉니다. (웹페이지 ⚙ 설정에 넣는 열쇠)
+ *  4) 배포 > 새 배포 > 유형: 웹 앱 / 다음 사용자로 실행: 나 / 액세스 권한: 모든 사용자
  *     배포 후 나오는 /exec 주소를 앱의 ⚙ 설정에 넣습니다.
  *
  * API
- *   GET  {url}?pin=1234&action=list        -> { ok:true, tasks:[...] }
- *   POST {url}  body { "pin":"1234", "action":"add"|"update"|"delete", ... }
- *        add    : { action:"add", task:{ id, title, zone, status, due, note } }
- *        update : { action:"update", task:{ id, ... } }
- *        delete : { action:"delete", id:"..." }
- *   모든 응답은 최신 목록 전체를 함께 돌려줍니다.
+ *   GET  {url}?pin=1234&action=list   -> { ok:true, tasks:[...] }
+ *   POST {url}  { pin, action:"add"|"update"|"delete", task?, id? }
+ *   응답은 항상 최신 목록 전체를 함께 돌려줍니다.
  */
 
-var SHEET_NAME = 'tasks';
-var HEADERS = ['id', 'title', 'zone', 'status', 'due', 'note', 'created', 'updated'];
-var ZONES = ['store', 'board', 'life', 'break'];
-var STATUS = ['active', 'pending', 'done'];
+var SHEET_ID = '';        // 예: '1AbCdEf...'
+var PIN = '0000';         // 원하는 PIN 으로 바꾸세요
+var HEAD = ['id', 'title', 'zone', 'status', 'due', 'note', 'created', 'updated'];
 
-function setup() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(SHEET_NAME);
-  if (sh.getLastRow() === 0) {
-    sh.appendRow(HEADERS);
-    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
-    sh.setFrozenRows(1);
-  }
-  var pin = PropertiesService.getScriptProperties().getProperty('PIN');
-  if (!pin) {
-    throw new Error('스크립트 속성에 PIN 을 먼저 넣어 주세요. (프로젝트 설정 > 스크립트 속성)');
-  }
-  return '준비 완료 · PIN 길이 ' + pin.length;
-}
-
-function getSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) {
-    sh = ss.insertSheet(SHEET_NAME);
-    sh.appendRow(HEADERS);
-    sh.setFrozenRows(1);
-  }
+function book_() {
+  var ss = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('tasks');
+  if (!sh) { sh = ss.insertSheet('tasks'); sh.appendRow(HEAD); }
+  sh.getRange('E:E').setNumberFormat('@');   // 마감일은 날짜가 아니라 글자로 보관
   return sh;
 }
 
-function readTasks_() {
-  var sh = getSheet_();
-  var last = sh.getLastRow();
-  if (last < 2) return [];
-  var values = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
-  var out = [];
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
-    if (!row[1]) continue;
-    out.push({
-      id: String(row[0] || ''),
-      title: String(row[1]),
-      zone: String(row[2] || 'board'),
-      status: String(row[3] || 'active'),
-      due: row[4] ? String(row[4]) : '',
-      note: row[5] ? String(row[5]) : ''
-    });
-  }
-  return out;
+function rows_() {
+  var sh = book_();
+  var n = sh.getLastRow();
+  if (n < 2) return [];
+  return sh.getRange(2, 1, n - 1, 8).getValues();
 }
 
-function findRow_(sh, id) {
-  var last = sh.getLastRow();
-  if (last < 2) return -1;
-  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) return i + 2;
-  }
-  return -1;
+function due_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Seoul', 'M/d HH:mm');
+  return String(v);
 }
 
-function json_(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+function list_() {
+  return rows_().filter(function (r) { return r[1]; }).map(function (r) {
+    return {
+      id: String(r[0]),
+      title: String(r[1]),
+      zone: String(r[2]),
+      status: String(r[3]),
+      due: due_(r[4]),
+      note: String(r[5] || '')
+    };
+  });
 }
 
-function checkPin_(pin) {
-  var real = PropertiesService.getScriptProperties().getProperty('PIN');
-  return !!real && String(pin) === String(real);
+function out_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function clean_(task) {
-  task = task || {};
+function pack_(t) {
   return [
-    String(task.id || Utilities.getUuid().slice(0, 8)),
-    String(task.title || '').slice(0, 120),
-    ZONES.indexOf(task.zone) >= 0 ? task.zone : 'board',
-    STATUS.indexOf(task.status) >= 0 ? task.status : 'active',
-    task.due ? String(task.due).slice(0, 20) : '',
-    task.note ? String(task.note).slice(0, 200) : '',
+    String(t.id || Utilities.getUuid().slice(0, 8)),
+    String(t.title || ''),
+    String(t.zone || 'board'),
+    String(t.status || 'active'),
+    String(t.due || ''),
+    String(t.note || ''),
     new Date(),
     new Date()
   ];
 }
 
 function doGet(e) {
-  try {
-    var p = e.parameter || {};
-    if (!checkPin_(p.pin)) return json_({ ok: false, error: 'PIN 이 맞지 않습니다.' });
-    if (p.action === 'ping') return json_({ ok: true, tasks: readTasks_() });
-    return json_({ ok: true, tasks: readTasks_() });
-  } catch (err) {
-    return json_({ ok: false, error: String(err) });
-  }
+  if (String(e.parameter.pin) !== PIN) return out_({ ok: false, error: 'PIN' });
+  return out_({ ok: true, tasks: list_() });
 }
 
 function doPost(e) {
-  try {
-    var body = JSON.parse((e.postData && e.postData.contents) || '{}');
-    if (!checkPin_(body.pin)) return json_({ ok: false, error: 'PIN 이 맞지 않습니다.' });
-    var sh = getSheet_();
-    var action = body.action || '';
+  var b = JSON.parse((e.postData && e.postData.contents) || '{}');
+  if (String(b.pin) !== PIN) return out_({ ok: false, error: 'PIN' });
+  var sh = book_();
+  var rs = rows_();
 
-    if (action === 'add' && body.task && body.task.title) {
-      sh.appendRow(clean_(body.task));
-    } else if (action === 'update' && body.task && body.task.id) {
-      var r = findRow_(sh, body.task.id);
-      if (r > 0) {
-        var cur = sh.getRange(r, 1, 1, HEADERS.length).getValues()[0];
-        var merged = {
-          id: body.task.id,
-          title: body.task.title != null ? body.task.title : cur[1],
-          zone: body.task.zone != null ? body.task.zone : cur[2],
-          status: body.task.status != null ? body.task.status : cur[3],
-          due: body.task.due != null ? body.task.due : cur[4],
-          note: body.task.note != null ? body.task.note : cur[5]
-        };
-        var rowArr = clean_(merged);
-        rowArr[6] = cur[6] || new Date();   // created 유지
-        sh.getRange(r, 1, 1, HEADERS.length).setValues([rowArr]);
-      }
-    } else if (action === 'delete' && body.id) {
-      var dr = findRow_(sh, body.id);
-      if (dr > 0) sh.deleteRow(dr);
-    } else {
-      return json_({ ok: false, error: '알 수 없는 요청입니다.' });
-    }
-
-    return json_({ ok: true, tasks: readTasks_() });
-  } catch (err) {
-    return json_({ ok: false, error: String(err) });
+  if (b.action === 'add' && b.task && b.task.title) {
+    sh.appendRow(pack_(b.task));
   }
+  if (b.action === 'update' && b.task && b.task.id) {
+    for (var i = 0; i < rs.length; i++) {
+      if (String(rs[i][0]) === String(b.task.id)) {
+        var r = rs[i];
+        var d = b.task;
+        var a = pack_({
+          id: r[0],
+          title: d.title != null ? d.title : r[1],
+          zone: d.zone != null ? d.zone : r[2],
+          status: d.status != null ? d.status : r[3],
+          due: d.due != null ? d.due : due_(r[4]),
+          note: d.note != null ? d.note : r[5]
+        });
+        a[6] = r[6];
+        sh.getRange(i + 2, 1, 1, 8).setValues([a]);
+        break;
+      }
+    }
+  }
+  if (b.action === 'delete' && b.id) {
+    for (var j = 0; j < rs.length; j++) {
+      if (String(rs[j][0]) === String(b.id)) { sh.deleteRow(j + 2); break; }
+    }
+  }
+  return out_({ ok: true, tasks: list_() });
 }

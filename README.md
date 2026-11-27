@@ -30,6 +30,20 @@ GitHub Pages에서 바로 열리는 정적 페이지이고, 할 일 데이터는
 존을 누르면 그 존의 할 일만 보이고, 단무지 캐릭터가 그쪽으로 걸어갑니다.
 바닥을 누르면 그 자리로 이동하고, 캐릭터를 누르면 인사합니다.
 
+## 동기화 연결
+
+1. 페이지 오른쪽 위 **⚙** → Apps Script 웹앱 주소와 PIN을 넣고 저장합니다.
+2. 한 번만 열면 연결되는 설정 링크를 쓰려면 주소 뒤에 `#sync=` 를 붙입니다.
+   `#sync=` 값은 `{"u":"웹앱 주소","p":"PIN"}` 을 base64url로 인코딩한 것입니다.
+   열리면 값은 브라우저에만 저장되고 주소창에서는 사라집니다.
+
+주소와 PIN은 저장소 파일에 들어 있지 않습니다.
+
+## 시트 구조
+
+`tasks` 탭 · `id, title, zone, status, due, note, created, updated`
+(`zone`: store / board / life / break, `status`: active / pending / done)
+
 ## 로컬에서 보기
 
 ```bash

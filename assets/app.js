@@ -1077,10 +1077,18 @@
       const id = mid(m);
       if (!actors[id]) {
         const zone = ZONE_OF[m.zone] || 'board';
-        const spot = randomSpot(zone);
+        let spot = randomSpot(zone);
+        // 다른 캐릭터와 너무 가까우면 다시 고른다(이름표가 겹치지 않게)
+        for (let k = 0; k < 14; k++) {
+          const clash = Object.keys(actors).some(function (other) {
+            return Math.hypot(actors[other].x - spot.x, actors[other].y - spot.y) < 26;
+          });
+          if (!clash) break;
+          spot = randomSpot(zone);
+        }
         actors[id] = {
           id: id, member: m,
-          x: spot.x + (i * 3), y: spot.y,
+          x: spot.x, y: spot.y,
           dir: 1, target: null, state: 'idle', t: 0,
           next: 2 + Math.random() * 3, zone: zone,
           bubble: '', bubbleT: 0

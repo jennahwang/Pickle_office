@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1c2033">
-<title>피클 오피스 · 할 일 현황판</title>
-<meta name="description" content="픽셀 캐릭터가 돌아다니는 개인 사무실 겸 할 일 현황판">
+<title>피클 오피스 · 할 일 & 지시함</title>
+<meta name="description" content="픽셀 캐릭터가 돌아다니는 개인 사무실 · 할 일 현황판 · 오피스 지시함">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231c2033'/%3E%3Crect x='4' y='3' width='8' height='2' fill='%23f2d21f'/%3E%3Crect x='4' y='3' width='2' height='10' fill='%23f2d21f'/%3E%3Crect x='4' y='11' width='8' height='2' fill='%23f2d21f'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="assets/style.css?v=10">
+<link rel="stylesheet" href="assets/style.css?v=11">
 </head>
 <body>
 <div class="app" id="app">
@@ -17,12 +17,12 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
         <h1>피클 오피스</h1>
-        <p class="brand-sub">개인 사무실 · 할 일 현황판</p>
+        <p class="brand-sub">개인 사무실 · 할 일 · 지시함</p>
       </div>
     </div>
     <div class="topbar-right">
       <span class="sync-dot" id="syncDot" title="동기화 상태"><i></i><span id="syncText">로컬</span></span>
-      <button class="icon-btn" id="settingsBtn" title="동기화 설정" aria-label="동기화 설정">⚙</button>
+      <button class="icon-btn" id="settingsBtn" title="동기화 · 멤버 설정" aria-label="동기화 · 멤버 설정">⚙</button>
     </div>
   </header>
 
@@ -43,35 +43,71 @@
 
     <aside class="panel" id="panel">
       <div class="panel-grip" id="panelGrip" aria-hidden="true"></div>
-      <div class="panel-head">
-        <div>
-          <h2 id="panelTitle">전체 할 일</h2>
-          <p class="panel-sub" id="panelSub">오늘의 진행 상황</p>
+
+      <div class="panel-tabs" role="tablist" aria-label="패널 전환">
+        <button class="panel-tab sel" id="tabTasks" role="tab" aria-selected="true" aria-controls="paneTasks">할 일 현황판</button>
+        <button class="panel-tab" id="tabInbox" role="tab" aria-selected="false" aria-controls="paneInbox">
+          오피스 지시함<span class="tab-badge" id="reqBadge" hidden>0</span>
+        </button>
+      </div>
+
+      <!-- 할 일 -->
+      <section class="pane" id="paneTasks" role="tabpanel" aria-labelledby="tabTasks">
+        <div class="panel-head">
+          <div>
+            <h2 id="panelTitle">전체 할 일</h2>
+            <p class="panel-sub" id="panelSub">오늘의 진행 상황</p>
+          </div>
+          <button class="ghost-btn" id="clearFilter" hidden>전체 보기</button>
         </div>
-        <button class="ghost-btn" id="clearFilter" hidden>전체 보기</button>
-      </div>
 
-      <div class="stats" id="stats">
-        <div class="stat"><b id="stActive">0</b><span>진행</span></div>
-        <div class="stat"><b id="stPending">0</b><span>대기</span></div>
-        <div class="stat"><b id="stDone">0</b><span>완료</span></div>
-      </div>
+        <div class="stats" id="stats">
+          <div class="stat"><b id="stActive">0</b><span>진행</span></div>
+          <div class="stat"><b id="stPending">0</b><span>대기</span></div>
+          <div class="stat"><b id="stDone">0</b><span>완료</span></div>
+        </div>
 
-      <form class="add-form" id="addForm" autocomplete="off">
-        <input id="newTitle" type="text" placeholder="할 일을 적어 주세요" maxlength="80" required>
-        <select id="newZone" aria-label="존 선택">
-          <option value="store">매장 업무</option>
-          <option value="board">현황판</option>
-          <option value="life">일상·위스키</option>
-          <option value="break">휴식</option>
-        </select>
-        <button type="submit" class="primary-btn">추가</button>
-      </form>
+        <form class="add-form" id="addForm" autocomplete="off">
+          <input id="newTitle" type="text" placeholder="할 일을 적어 주세요" maxlength="80" required>
+          <select id="newZone" aria-label="존 선택">
+            <option value="store">매장 업무</option>
+            <option value="board">현황판</option>
+            <option value="life">일상·위스키</option>
+            <option value="break">휴식</option>
+          </select>
+          <select id="newAssignee" aria-label="담당 선택"></select>
+          <button type="submit" class="primary-btn">추가</button>
+        </form>
 
-      <div class="task-list" id="taskList"></div>
-      <div class="empty" id="emptyState" hidden>
-        <p>여기에 할 일이 없습니다.</p>
-      </div>
+        <div class="task-list" id="taskList"></div>
+        <div class="empty" id="emptyState" hidden>
+          <p>여기에 할 일이 없습니다.</p>
+        </div>
+      </section>
+
+      <!-- 지시함 -->
+      <section class="pane" id="paneInbox" role="tabpanel" aria-labelledby="tabInbox" hidden>
+        <div class="panel-head">
+          <div>
+            <h2 id="inboxTitle">오피스 지시함</h2>
+            <p class="panel-sub" id="inboxSub">맡길 사람을 고르고 일을 적어 보내세요</p>
+          </div>
+          <button class="ghost-btn" id="reqRefresh">새로고침</button>
+        </div>
+
+        <form class="req-form" id="reqForm" autocomplete="off">
+          <div class="target-row" id="targetRow" role="group" aria-label="받을 사람"></div>
+          <div class="req-input-row">
+            <input id="reqInput" type="text" placeholder="시킬 일을 적어 주세요" maxlength="300" required>
+            <button type="submit" class="primary-btn req-send" id="reqSend">보내기</button>
+          </div>
+        </form>
+
+        <div class="req-list" id="reqList"></div>
+        <div class="empty" id="reqEmpty" hidden>
+          <p>아직 지시한 일이 없습니다.<br>위에서 첫 지시를 보내 보세요.</p>
+        </div>
+      </section>
     </aside>
   </main>
 
@@ -85,7 +121,7 @@
 <div class="modal" id="settingsModal" hidden>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <h3 id="settingsTitle">동기화 설정</h3>
-    <p class="modal-desc">구글 시트에 연결하면 어떤 기기에서든 같은 할 일이 보입니다. 연결하지 않으면 이 브라우저에만 저장됩니다.</p>
+    <p class="modal-desc">구글 시트에 연결하면 어떤 기기에서든 같은 할 일과 지시가 보입니다. 연결하지 않으면 이 브라우저에만 저장됩니다.</p>
     <label class="field">
       <span>동기화 주소 (Apps Script 웹앱 URL)</span>
       <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
@@ -99,12 +135,26 @@
       <button class="ghost-btn" id="cfgDisconnect">연결 해제</button>
       <button class="primary-btn" id="cfgSave">저장 후 확인</button>
     </div>
+
+    <div class="member-box">
+      <div class="member-box-head">
+        <h4>오피스 멤버</h4>
+        <span class="member-count" id="memberCount">0</span>
+      </div>
+      <ul class="member-list" id="memberList"></ul>
+      <p class="member-hint">다른 피클을 초대하려면 아래 문구를 복사해 채팅으로 보내 주세요. 초대받은 피클이 이 주소와 PIN으로 연결하면 같은 오피스에 캐릭터로 합류합니다.</p>
+      <textarea class="invite-note" id="inviteNote" rows="3" readonly></textarea>
+      <div class="member-actions">
+        <button class="ghost-btn" id="copyInvite">초대 문구 복사</button>
+      </div>
+    </div>
+
     <button class="modal-close" id="cfgClose" aria-label="닫기">✕</button>
   </div>
 </div>
 
 <div class="toast" id="toast" hidden></div>
 
-<script src="assets/app.js?v=10"></script>
+<script src="assets/app.js?v=11"></script>
 </body>
 </html>

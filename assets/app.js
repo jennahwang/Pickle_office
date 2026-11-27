@@ -1,4 +1,4 @@
-/* 피클 오피스 — 픽셀 오피스 맵 + 할 일 현황판
+/* 피클 오피스 — 픽셀 오피스 맵 + 할 일 현황판 + 오피스 지시함
  * 공개 저장소에는 개인정보를 두지 않는다. 실제 데이터는 동기화 주소(Apps Script)에서
  * PIN으로 받아오고, 없으면 이 브라우저(localStorage)에만 저장한다.
  */
@@ -58,19 +58,31 @@
 
   const state = {
     tasks: [],
+    requests: [],
+    members: [],
     filter: null,
+    tab: 'tasks',
     cfg: { url: '', pin: '' },
     remote: false,
     online: null,   // null=미확인, true=동기화됨, false=오프라인
-    demo: false
+    demo: false,
+    reqTarget: '',
+    editingNote: null,
+    sending: false
   };
 
   const DEMO_TASKS = [
-    { id: 'demo1', zone: 'store', title: '샘플 · 매장 리뷰 확인', status: 'active', due: '' },
-    { id: 'demo2', zone: 'store', title: '샘플 · 재고 정리', status: 'pending', due: '' },
-    { id: 'demo3', zone: 'board', title: '샘플 · 주간 할 일 정리', status: 'active', due: '' },
-    { id: 'demo4', zone: 'life', title: '샘플 · 라운지 병 정리', status: 'active', due: '' },
-    { id: 'demo5', zone: 'break', title: '샘플 · 커피 사 오기', status: 'done', due: '' }
+    { id: 'demo1', zone: 'store', title: '샘플 · 매장 리뷰 확인', status: 'active', due: '', assignee: '' },
+    { id: 'demo2', zone: 'store', title: '샘플 · 재고 정리', status: 'pending', due: '', assignee: '' },
+    { id: 'demo3', zone: 'board', title: '샘플 · 주간 할 일 정리', status: 'active', due: '', assignee: '' },
+    { id: 'demo4', zone: 'life', title: '샘플 · 라운지 병 정리', status: 'active', due: '', assignee: '' },
+    { id: 'demo5', zone: 'break', title: '샘플 · 커피 사 오기', status: 'done', due: '', assignee: '' }
+  ];
+
+  // 동기화 전(로컬)에 쓰는 기본 멤버. 실제 이름은 시트의 members 탭에서 온다.
+  const DEFAULT_MEMBERS = [
+    { id: 'danmuji', name: '단무지', role: 'ai', color: '#facc15', shape: 'ㄷ', zone: 'board', statusText: '대기 중' },
+    { id: 'owner', name: '나', role: 'owner', color: '#7fb3ff', shape: 'mgr', zone: 'board', statusText: '확인 중' }
   ];
 
   /* ─────────────────────── 저장소 / API ─────────────────────── */
@@ -85,7 +97,12 @@
   }
   function saveLocal() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ tasks: state.tasks, updated: Date.now() }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        tasks: state.tasks,
+        requests: state.requests,
+        members: state.members,
+        updated: Date.now()
+      }));
     } catch (e) { /* 저장 공간 없음 — 무시 */ }
   }
   function loadCfg() {
@@ -129,7 +146,7 @@
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || data.ok !== true) throw new Error((data && data.error) || '연결 실패');
-    return normalize(data.tasks || []);
+    return data;
   }
 
   async function remoteSend(payload) {
@@ -142,20 +159,63 @@
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || data.ok !== true) throw new Error((data && data.error) || '저장 실패');
-    return normalize(data.tasks || []);
+    return data;
   }
 
-  function normalize(list) {
-    return list.filter(function (t) { return t && t.title; }).map(function (t) {
+  /* ───────────────────────── 정규화 ───────────────────────── */
+  function normalizeTasks(list) {
+    return (list || []).filter(function (t) { return t && t.title; }).map(function (t) {
       return {
         id: String(t.id || Math.random().toString(36).slice(2, 10)),
         title: String(t.title).slice(0, 120),
         zone: ZONE_OF[t.zone] ? t.zone : 'board',
         status: (t.status === 'done' || t.status === 'pending') ? t.status : 'active',
         due: t.due ? String(t.due).slice(0, 20) : '',
-        note: t.note ? String(t.note).slice(0, 200) : ''
+        note: t.note ? String(t.note).slice(0, 400) : '',
+        assignee: t.assignee ? String(t.assignee).replace(/^@/, '').slice(0, 24) : ''
       };
     });
+  }
+
+  function normalizeRequests(list) {
+    return (list || []).filter(function (r) { return r && (r.message || r.id); }).map(function (r) {
+      const st = String(r.status || 'pending');
+      return {
+        id: String(r.id || Math.random().toString(36).slice(2, 10)),
+        sender: r.sender ? String(r.sender).replace(/^@/, '').slice(0, 24) : '',
+        target: r.target ? String(r.target).replace(/^@/, '').slice(0, 24) : '단무지',
+        message: String(r.message || '').slice(0, 500),
+        status: (st === 'done' || st === 'in_progress') ? st : 'pending',
+        reply: r.reply ? String(r.reply).slice(0, 800) : '',
+        createdAt: r.createdAt ? String(r.createdAt) : '',
+        updatedAt: r.updatedAt ? String(r.updatedAt) : ''
+      };
+    }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+  }
+
+  const SHAPES = { 'ㄷ': 1, mgr: 1, sq: 1, ci: 1 };
+  function normalizeMembers(list) {
+    const out = (list || []).filter(function (m) { return m && m.name; }).map(function (m, i) {
+      const color = /^#[0-9a-fA-F]{6}$/.test(String(m.color || '')) ? String(m.color) : '#8fb8ff';
+      return {
+        id: String(m.id || ('m' + i)),
+        name: String(m.name).replace(/^@/, '').slice(0, 24),
+        role: (m.role === 'owner') ? 'owner' : 'ai',
+        color: color,
+        shape: SHAPES[String(m.shape)] ? String(m.shape) : 'sq',
+        zone: ZONE_KEY[ZONE_OF[m.zone]] ? String(m.zone) : 'board',
+        statusText: m.statusText ? String(m.statusText).slice(0, 60) : ''
+      };
+    });
+    return out.length ? out : DEFAULT_MEMBERS.slice();
+  }
+
+  function applySnapshot(data) {
+    if (!data) return;
+    if (Array.isArray(data.tasks)) state.tasks = normalizeTasks(data.tasks);
+    if (Array.isArray(data.requests)) state.requests = normalizeRequests(data.requests);
+    if (Array.isArray(data.members) && data.members.length) state.members = normalizeMembers(data.members);
+    saveLocal();
   }
 
   function setSync(status, text) {
@@ -169,28 +229,30 @@
     label.textContent = text;
   }
 
-  async function refresh() {
-    if (!hasRemote()) {
-      state.remote = false;
-      setSync(null, '로컬 저장');
-      return;
-    }
-    state.remote = true;
-    try {
-      const list = await remoteList();
-      state.tasks = list;
-      state.demo = false;
-      saveLocal();
-      setSync(true, '동기화됨');
-      render();
-    } catch (e) {
-      setSync(false, '오프라인');
-      if (!state.tasks.length) {
-        const local = loadLocal();
-        if (local) state.tasks = local.tasks;
-        render();
-      }
-    }
+  /* ───────────────────────── 멤버 도우미 ───────────────────────── */
+  const mid = function (m) { return m.id || m.name; };
+
+  function memberList() { return state.members.length ? state.members : DEFAULT_MEMBERS; }
+
+  function memberByName(name) {
+    const n = String(name || '').replace(/^@/, '');
+    return memberList().filter(function (m) { return m.name === n; })[0] || null;
+  }
+
+  function firstAi() {
+    const l = memberList();
+    return l.filter(function (m) { return m.role === 'ai' && m.name === '단무지'; })[0]
+      || l.filter(function (m) { return m.role === 'ai'; })[0]
+      || l[0];
+  }
+
+  function ownerMember() {
+    return memberList().filter(function (m) { return m.role === 'owner'; })[0] || null;
+  }
+
+  function assigneeColor(name) {
+    const m = memberByName(name);
+    return m ? m.color : '#9aa3c0';
   }
 
   /* ─────────────────────────── 렌더 DOM ─────────────────────────── */
@@ -204,7 +266,22 @@
     return span;
   }
 
-  function render() {
+  function renderTabs() {
+    const tasksOn = state.tab === 'tasks';
+    $('tabTasks').classList.toggle('sel', tasksOn);
+    $('tabInbox').classList.toggle('sel', !tasksOn);
+    $('tabTasks').setAttribute('aria-selected', tasksOn ? 'true' : 'false');
+    $('tabInbox').setAttribute('aria-selected', tasksOn ? 'false' : 'true');
+    $('paneTasks').hidden = !tasksOn;
+    $('paneInbox').hidden = tasksOn;
+
+    const open = state.requests.filter(function (r) { return r.status !== 'done'; }).length;
+    const badge = $('reqBadge');
+    badge.hidden = open === 0;
+    badge.textContent = open > 9 ? '9+' : String(open);
+  }
+
+  function renderTasks() {
     const list = $('taskList');
     list.textContent = '';
 
@@ -230,9 +307,21 @@
       const title = document.createElement('p');
       title.className = 'task-title';
       title.textContent = t.title;
+
       const meta = document.createElement('div');
       meta.className = 'task-meta';
       meta.appendChild(zoneTag(t.zone));
+
+      // 담당 배지 — 누르면 담당이 바뀐다
+      const asg = document.createElement('button');
+      asg.type = 'button';
+      asg.className = 'assignee' + (t.assignee ? '' : ' none');
+      asg.style.color = assigneeColor(t.assignee);
+      asg.textContent = t.assignee ? '@' + t.assignee : '@미지정';
+      asg.title = '눌러서 담당 바꾸기';
+      asg.addEventListener('click', function () { cycleAssignee(t); });
+      meta.appendChild(asg);
+
       if (t.status === 'pending') {
         const p = document.createElement('span');
         p.className = 'tag pending';
@@ -245,8 +334,52 @@
         d.textContent = t.due;
         meta.appendChild(d);
       }
+
       body.appendChild(title);
       body.appendChild(meta);
+
+      // 결과 메모 (단무지·초대된 피클이 남긴 처리 결과)
+      if (state.editingNote === t.id) {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'note-edit';
+        inp.maxLength = 200;
+        inp.placeholder = '처리 결과를 한 줄로 남겨 주세요';
+        inp.value = t.note || '';
+        const commit = function () {
+          if (state.editingNote !== t.id) return;
+          const v = inp.value.trim().slice(0, 200);
+          state.editingNote = null;
+          if (v !== t.note) { t.note = v; saveLocal(); pushRemote({ action: 'update', task: t }); }
+          renderTasks();
+        };
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { state.editingNote = null; renderTasks(); }
+        });
+        inp.addEventListener('blur', commit);
+        body.appendChild(inp);
+        setTimeout(function () { inp.focus(); }, 0);
+      } else if (t.note) {
+        const note = document.createElement('p');
+        note.className = 'task-note';
+        note.textContent = '↳ ' + t.note;
+        body.appendChild(note);
+      }
+
+      const tools = document.createElement('div');
+      tools.className = 'task-tools';
+
+      const noteBtn = document.createElement('button');
+      noteBtn.className = 'note-btn';
+      noteBtn.type = 'button';
+      noteBtn.setAttribute('aria-label', '결과 메모');
+      noteBtn.title = '결과 메모';
+      noteBtn.textContent = '✎';
+      noteBtn.addEventListener('click', function () {
+        state.editingNote = t.id;
+        renderTasks();
+      });
 
       const del = document.createElement('button');
       del.className = 'del';
@@ -255,9 +388,12 @@
       del.textContent = '✕';
       del.addEventListener('click', function () { removeTask(t); });
 
+      tools.appendChild(noteBtn);
+      tools.appendChild(del);
+
       row.appendChild(check);
       row.appendChild(body);
-      row.appendChild(del);
+      row.appendChild(tools);
       list.appendChild(row);
     });
 
@@ -287,40 +423,181 @@
     });
     $('newZone').value = z || 'store';
 
-    // 단무지 말풍선 후보 갱신
     refreshBubblePool();
+  }
+
+  const STATUS_LABEL = { pending: '대기중', in_progress: '진행중', done: '완료' };
+
+  function renderInbox() {
+    // 받을 사람 칩
+    const row = $('targetRow');
+    const names = [];
+    memberList().forEach(function (m) { if (names.indexOf(m.name) < 0) names.push(m.name); });
+    if (names.indexOf('전체') < 0) names.push('전체');
+
+    if (!state.reqTarget || names.indexOf(state.reqTarget) < 0) {
+      const ai = firstAi();
+      state.reqTarget = ai ? ai.name : names[0];
+    }
+
+    row.textContent = '';
+    names.forEach(function (n) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'target-chip' + (state.reqTarget === n ? ' sel' : '');
+      if (n !== '전체') {
+        const i = document.createElement('i');
+        i.style.background = assigneeColor(n);
+        b.appendChild(i);
+      }
+      b.appendChild(document.createTextNode('@' + n));
+      b.addEventListener('click', function () { state.reqTarget = n; renderInbox(); });
+      row.appendChild(b);
+    });
+
+    $('reqInput').placeholder = '@' + state.reqTarget + '에게 시킬 일을 적어 주세요';
+
+    // 지시 목록
+    const list = $('reqList');
+    list.textContent = '';
+    const shown = state.requests.slice();
+
+    shown.forEach(function (r) {
+      const card = document.createElement('div');
+      card.className = 'req' + (r.status === 'done' ? ' is-done' : '');
+
+      const top = document.createElement('div');
+      top.className = 'req-top';
+
+      const tg = document.createElement('span');
+      tg.className = 'req-target';
+      tg.style.color = r.target === '전체' ? '#6be0ff' : assigneeColor(r.target);
+      tg.textContent = '@' + r.target;
+      top.appendChild(tg);
+
+      const st = document.createElement('span');
+      st.className = 'st ' + r.status;
+      st.textContent = STATUS_LABEL[r.status] || r.status;
+      top.appendChild(st);
+
+      const time = document.createElement('span');
+      time.className = 'req-time';
+      time.textContent = shortTime(r.createdAt);
+      top.appendChild(time);
+
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.type = 'button';
+      del.setAttribute('aria-label', '지시 삭제');
+      del.textContent = '✕';
+      del.addEventListener('click', function () { removeRequest(r); });
+      top.appendChild(del);
+
+      const msg = document.createElement('p');
+      msg.className = 'req-msg';
+      msg.textContent = r.message;
+
+      card.appendChild(top);
+      card.appendChild(msg);
+
+      if (r.reply) {
+        const rep = document.createElement('p');
+        rep.className = 'req-reply';
+        rep.textContent = '💬 ' + r.reply;
+        card.appendChild(rep);
+      }
+      list.appendChild(card);
+    });
+
+    $('reqEmpty').hidden = shown.length > 0;
+    renderTabs();
+  }
+
+  function renderMembers() {
+    const ul = $('memberList');
+    ul.textContent = '';
+    memberList().forEach(function (m) {
+      const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = m.color;
+      const nm = document.createElement('span');
+      nm.textContent = m.name;
+      const role = document.createElement('span');
+      role.className = 'role';
+      role.textContent = m.role === 'owner' ? '주인' : 'AI 피클';
+      li.appendChild(dot);
+      li.appendChild(nm);
+      li.appendChild(role);
+      ul.appendChild(li);
+    });
+    $('memberCount').textContent = memberList().length + '명';
+    $('inviteNote').value = inviteNote();
+  }
+
+  function syncAssigneeOptions() {
+    const sel = $('newAssignee');
+    const want = [''].concat(memberList().map(function (m) { return m.name; }));
+    const have = Array.prototype.map.call(sel.options, function (o) { return o.value; });
+    if (have.length === want.length && want.every(function (v, i) { return have[i] === v; })) return;
+    fillAssigneeOptions();
+  }
+
+  function render() {
+    renderTabs();
+    renderTasks();
+    renderInbox();
+    renderMembers();
+    syncAssigneeOptions();
+  }
+
+  function shortTime(s) {
+    if (!s) return '';
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    if (m) return m[2] + '/' + m[3] + ' ' + m[4] + ':' + m[5];
+    return String(s).slice(0, 16);
   }
 
   /* ─────────────────────────── 동작 ─────────────────────────── */
   function uid() { return Math.random().toString(36).slice(2, 10); }
 
-  async function pushRemote(payload) {
-    if (!hasRemote()) { saveLocal(); return; }
+  async function pushRemote(payload, okText) {
+    if (!hasRemote()) { saveLocal(); if (okText) toast(okText + ' · 이 기기에만 저장'); return; }
     try {
-      const list = await remoteSend(payload);
-      state.tasks = list;
-      saveLocal();
+      const data = await remoteSend(payload);
+      applySnapshot(data);
       setSync(true, '동기화됨');
       render();
+      if (okText) toast(okText);
     } catch (e) {
       setSync(false, '오프라인');
       toast('서버에 저장하지 못했어요. 이 기기에만 남겨 뒀습니다.');
     }
   }
 
+  function aiActor() {
+    const ai = firstAi();
+    return ai ? actors[mid(ai)] : null;
+  }
+
   function toggleDone(t) {
     t.status = t.status === 'done' ? 'active' : 'done';
     saveLocal();
     render();
-    if (state.remote) pushRemote({ action: 'update', task: t });
-    bubbleSay('danmuji', t.status === 'done' ? '하나 끝! 🎉' : '다시 할 일로 돌렸어요');
+    if (state.remote) pushRemote({ action: 'toggle', id: t.id, task: t });
+    const a = aiActor();
+    if (a) bubbleSay(a, t.status === 'done' ? '하나 끝! 🎉' : '다시 할 일로 돌렸어요');
   }
 
-  function cycleStatus(t) {
-    t.status = t.status === 'active' ? 'pending' : (t.status === 'pending' ? 'done' : 'active');
+  function cycleAssignee(t) {
+    const names = [''].concat(memberList().map(function (m) { return m.name; }));
+    const i = names.indexOf(t.assignee || '');
+    t.assignee = names[(i + 1) % names.length];
     saveLocal();
     render();
     if (state.remote) pushRemote({ action: 'update', task: t });
+    const a = aiActor();
+    if (a) bubbleSay(a, t.assignee ? t.assignee + ' 담당으로 바꿨어요' : '담당을 비웠어요');
   }
 
   function removeTask(t) {
@@ -330,24 +607,74 @@
     if (state.remote) pushRemote({ action: 'delete', id: t.id });
   }
 
-  function addTask(title, zone) {
-    const t = { id: uid(), title: title, zone: zone, status: 'active', due: '', note: '' };
+  function addTask(title, zone, assignee) {
+    const t = { id: uid(), title: title, zone: zone, status: 'active', due: '', note: '', assignee: assignee || '' };
     state.tasks.unshift(t);
     saveLocal();
     render();
     if (state.remote) pushRemote({ action: 'add', task: t });
-    focusActor(ZONE_OF[zone]);
-    bubbleSay('danmuji', '새 할 일 접수! 「' + title.slice(0, 18) + '」');
+    focusActors(zone);
+    const a = aiActor();
+    if (a) bubbleSay(a, '새 할 일 접수! 「' + title.slice(0, 16) + '」');
+  }
+
+  async function sendRequest() {
+    const input = $('reqInput');
+    const msg = input.value.trim();
+    if (!msg || state.sending) return;
+    const target = state.reqTarget || (firstAi() ? firstAi().name : '단무지');
+    const owner = ownerMember();
+    const r = {
+      id: uid(),
+      sender: owner ? owner.name : '나',
+      target: target,
+      message: msg.slice(0, 300),
+      status: 'pending',
+      reply: '',
+      createdAt: stampNow(),
+      updatedAt: stampNow()
+    };
+    state.requests.unshift(r);
+    state.sending = true;
+    $('reqSend').disabled = true;
+    input.value = '';
+    saveLocal();
+    render();
+    const targetMember = memberByName(target) || firstAi();
+    const a = (targetMember && actors[mid(targetMember)]) || aiActor();
+    if (a) bubbleSay(a, '@' + target + ' 지시 접수!');
+    try {
+      await pushRemote({ action: 'req_add', request: r }, '지시를 보냈어요');
+    } finally {
+      state.sending = false;
+      $('reqSend').disabled = false;
+      input.focus();
+    }
+  }
+
+  function removeRequest(r) {
+    state.requests = state.requests.filter(function (x) { return x.id !== r.id; });
+    saveLocal();
+    render();
+    if (state.remote) pushRemote({ action: 'req_delete', id: r.id });
+  }
+
+  function stampNow() {
+    const d = new Date();
+    const p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
   function setFilter(zone) {
     state.filter = state.filter === zone ? null : zone;
+    if (state.tab !== 'tasks') { state.tab = 'tasks'; }
     render();
     if (zone) {
-      focusActor(zone);
-      bubbleSay('danmuji', ZONES[zone].name + ' 확인하러 갈게요');
+      focusActors(zone);
+      const a = aiActor();
+      if (a) bubbleSay(a, ZONES[zone].name + ' 확인하러 갈게요');
     }
-    openSheet(true);
   }
 
   let toastTimer = null;
@@ -408,39 +735,32 @@
     r(6, 25, 1, H - 25, C.wallEdge);
 
     /* ── 휴식·커피 코너 (좌상) ── */
-    // 카운터
     r(14, 28, 62, 20, C.deskFront);
     r(14, 28, 62, 12, C.deskTop);
     r(14, 40, 62, 2, C.deskEdge);
     r(20, 42, 50, 1, '#5c3f29');
-    // 커피 머신
     r(20, 30, 16, 10, '#2b3150');
     r(22, 31, 12, 5, '#3d466b');
     r(24, 36, 3, 3, '#d9d3c4');
     r(30, 30, 2, 2, '#ef6b6b');
     r(31, 33, 1, 1, '#5fd08a');
-    // 컵 두 개
     r(42, 33, 4, 4, C.white);
     r(48, 34, 3, 3, '#d5cfbe');
-    // 화분 (좌상)
     r(86, 36, 12, 4, C.pot);
     r(88, 30, 8, 6, C.plant);
     r(86, 26, 12, 5, C.plantDark);
     r(90, 24, 4, 3, C.plant);
-    // 원두 자루
     r(62, 33, 8, 6, '#8a6a4a');
     r(62, 33, 8, 1, '#a1835f');
-    // 스툴
     r(16, 74, 12, 3, '#8a6a4a');
     r(16, 77, 12, 1, '#6b4f35');
     r(18, 78, 2, 5, C.metalDark);
     r(24, 78, 2, 5, C.metalDark);
 
     /* ── 할 일 현황판 (중앙) ── */
-    r(116, 26, 86, 48, '#2b3150');            // 프레임
-    r(118, 28, 82, 44, C.screen);             // 화면
+    r(116, 26, 86, 48, '#2b3150');
+    r(118, 28, 82, 44, C.screen);
     r(118, 28, 82, 3, '#132a3d');
-    // 화면 내용 — 미니 할일 막대
     for (let i = 0; i < 5; i++) {
       const y = 34 + i * 7;
       r(122, y, 3, 3, i < 3 ? '#f2d21f' : '#5fd08a');
@@ -448,21 +768,17 @@
       r(128, y + 3, 60, 1, '#1b2b3d');
     }
     r(118, 66, 82, 1, '#101d2b');
-    // 스크린 스탠드
     r(150, 74, 18, 2, C.metalDark);
     r(156, 76, 6, 4, C.metalDark);
-    // 옆 모니터 데스크
     r(196, 60, 26, 12, C.deskFront);
     r(196, 60, 26, 4, C.deskTop);
     r(200, 52, 14, 9, '#1b2035');
     r(201, 53, 12, 7, '#2e6d8f');
     r(205, 62, 4, 2, C.metalDark);
-    // 액자
     r(78, 30, 10, 8, '#3a3350');
     r(79, 31, 8, 6, '#7f6fb8');
 
     /* ── 매장 업무 존 (좌하) ── */
-    // 바닥 매트 (가구보다 먼저 깔아야 가구가 가려지지 않는다)
     r(6, 96, 104, 92, '#3a4160');
     for (let y = 100; y < 186; y += 6) r(6, y, 104, 1, '#414866');
 
@@ -471,40 +787,33 @@
       r(dx, dy, 60, 16, C.deskTop);
       r(dx, dy + 16, 60, 1, C.deskEdge);
       r(dx + 4, dy + 18, 52, 1, '#5c3f29');
-      // 모니터
       r(dx + 6, dy - 10, 20, 12, '#1b2035');
       r(dx + 7, dy - 9, 18, 10, '#2c4a6b');
       r(dx + 11, dy - 6, 10, 1, '#7fd4ff');
       r(dx + 11, dy - 3, 6, 1, '#4a8fb8');
       r(dx + 14, dy + 2, 4, 2, C.metalDark);
-      // 서류 / 컵
       r(dx + 32, dy - 4, 10, 7, C.paper);
       r(dx + 33, dy - 3, 8, 1, '#c9c3b0');
       r(dx + 33, dy - 1, 6, 1, '#c9c3b0');
       r(dx + 48, dy - 3, 4, 4, C.white);
-      // 서랍
       r(dx + 2, dy + 18, 20, 4, '#6b4a30');
       r(dx + 2, dy + 19, 20, 1, C.deskEdge);
     }
     desk(14, 106);
     desk(14, 142);
-    // 서류 캐비닛
     r(84, 102, 18, 22, '#8f8a7a');
     r(84, 102, 18, 2, '#a8a291');
     r(86, 108, 14, 1, '#6e695c');
     r(86, 116, 14, 1, '#6e695c');
     r(91, 111, 4, 2, '#4a463c');
-    // 쌓인 박스
     r(86, 128, 10, 8, '#c9a06a');
     r(86, 128, 10, 1, '#e0bb85');
     r(88, 136, 8, 6, '#b98f5c');
 
     /* ── 라운지 (우하) ── */
-    // 러그
     r(122, 126, 60, 26, C.rug);
     r(124, 128, 56, 22, '#67568a');
     r(126, 130, 52, 18, C.rug);
-    // 소파
     r(116, 158, 66, 26, C.sofaDark);
     r(118, 160, 62, 20, C.sofa);
     r(118, 160, 62, 4, '#d06a63');
@@ -512,12 +821,10 @@
     r(150, 166, 26, 6, '#b34c47');
     r(128, 152, 16, 8, '#e08883');
     r(148, 152, 16, 8, '#e08883');
-    // 커피 테이블
     r(132, 132, 30, 16, C.deskTop);
     r(132, 132, 30, 3, '#d0a473');
     r(134, 148, 2, 4, C.deskFront);
     r(158, 148, 2, 4, C.deskFront);
-    // 위스키 진열장
     r(204, 102, 52, 26, '#6b4a30');
     r(204, 102, 52, 2, '#8a6340');
     r(206, 108, 48, 1, '#4d3323');
@@ -534,11 +841,9 @@
       r(bxp, 119 - hgt, 4, hgt, i % 2 ? '#c9a26a' : '#8a4a56');
       r(bxp, 118 - hgt, 1, 2, '#2b1f14');
     }
-    // 스탠드 조명
     r(196, 144, 8, 3, '#d9c9a0');
     r(198, 147, 2, 9, C.metalDark);
     r(195, 156, 8, 2, C.metalDark);
-    // 고양이 (잠자는 중)
     r(260, 168, 14, 8, '#8d8b9c');
     r(262, 165, 8, 4, '#9d9bad');
     r(261, 163, 2, 2, '#8d8b9c');
@@ -546,31 +851,40 @@
     r(259, 174, 6, 2, '#7d7b8c');
     r(263, 168, 1, 1, '#2a2a35');
     r(269, 168, 1, 1, '#2a2a35');
-    // 화분 (우하)
     r(296, 172, 12, 5, C.pot);
     r(298, 162, 8, 10, C.plant);
     r(294, 156, 16, 7, C.plantDark);
     r(300, 152, 6, 5, C.plant);
-    // 벽시계
     r(281, 29, 12, 12, '#3a3350');
     r(282, 30, 10, 10, '#e8e3d2');
     r(286, 32, 1, 4, '#3a3350');
     r(287, 35, 3, 1, '#3a3350');
     r(286, 30, 1, 1, '#b9b2a0');
-    // 벽 액자 2
     r(176, 28, 8, 10, '#3a3350');
     r(177, 29, 6, 8, '#6b8fb8');
     r(288, 46, 12, 8, '#3a3350');
     r(289, 47, 10, 6, '#c9a06a');
   }
 
-  /* ── 캐릭터 ── */
-  const actors = {
-    danmuji: { x: 128, y: 118, dir: 1, target: null, state: 'idle', t: 0, next: 2.5, zone: 'board', bubble: '', bubbleT: 0 },
-    user: { x: 178, y: 120, dir: -1, target: null, state: 'idle', t: 0, next: 4.0, zone: 'board', bubble: '', bubbleT: 0 }
-  };
+  /* ── 색 도우미 ── */
+  function shade(hex, f) {
+    const n = parseInt(String(hex).replace('#', ''), 16);
+    let rr = (n >> 16) & 255, gg = (n >> 8) & 255, bb = n & 255;
+    const t = f < 1 ? 0 : 255, p = Math.abs(f - 1);
+    rr = Math.round(rr + (t - rr) * p);
+    gg = Math.round(gg + (t - gg) * p);
+    bb = Math.round(bb + (t - bb) * p);
+    return '#' + [rr, gg, bb].map(function (v) {
+      v = Math.max(0, Math.min(255, v));
+      return (v < 16 ? '0' : '') + v.toString(16);
+    }).join('');
+  }
 
-  function drawDanmuji(a, time) {
+  /* ── 캐릭터 ── */
+  const actors = {};        // id → actor
+  let actorList = [];
+
+  function drawD(a, color, time) {
     const x = Math.round(a.x), y = Math.round(a.y);
     const walking = a.state === 'walk';
     const step = walking ? Math.floor(time * 8) % 2 : 0;
@@ -581,24 +895,22 @@
     ctx.translate(x, yy);
     if (a.dir < 0) ctx.scale(-1, 1);
 
-    // 그림자
     ctx.fillStyle = 'rgba(0,0,0,.28)';
     ctx.fillRect(-6, 0, 12, 2);
-    // 다리
-    ctx.fillStyle = C.yellowDark;
-    ctx.fillRect(-4 + (step ? 1 : 0), -2, 3, 3); 
+    ctx.fillStyle = shade(color, 0.72);
+    ctx.fillRect(-4 + (step ? 1 : 0), -2, 3, 3);
     ctx.fillRect(1 - (step ? 1 : 0), -2, 3, 3);
     // ㄷ 몸통
-    ctx.fillStyle = C.yellow;
-    ctx.fillRect(-6, -16, 12, 4);   // 윗변
-    ctx.fillRect(-6, -16, 4, 15);   // 왼쪽 변
-    ctx.fillRect(-6, -5, 12, 3);    // 아랫변
+    ctx.fillStyle = color;
+    ctx.fillRect(-6, -16, 12, 4);
+    ctx.fillRect(-6, -16, 4, 15);
+    ctx.fillRect(-6, -5, 12, 3);
     // 하이라이트
-    ctx.fillStyle = C.yellowLight;
+    ctx.fillStyle = shade(color, 1.35);
     ctx.fillRect(-5, -15, 2, 3);
     ctx.fillRect(-5, -12, 1, 6);
     // 테두리 음영
-    ctx.fillStyle = C.yellowDark;
+    ctx.fillStyle = shade(color, 0.72);
     ctx.fillRect(4, -15, 2, 2);
     ctx.fillRect(-6, -3, 12, 1);
     // 눈
@@ -611,18 +923,19 @@
       ctx.fillRect(-4, -13, 2, 3);
       ctx.fillRect(-4, -9, 2, 2);
     }
-    // 볼
     ctx.fillStyle = '#f08aa0';
     ctx.fillRect(-1, -10, 2, 2);
     ctx.restore();
   }
 
-  function drawUser(a, time) {
+  function drawMgr(a, color, time) {
     const x = Math.round(a.x), y = Math.round(a.y);
     const walking = a.state === 'walk';
     const step = walking ? Math.floor(time * 8) % 2 : 0;
     const bob = walking ? (step ? 1 : 0) : 0;
     const yy = y - bob;
+    const jacket = shade(color, 0.62);
+    const jacket2 = shade(color, 0.5);
 
     ctx.save();
     ctx.translate(x, yy);
@@ -638,9 +951,9 @@
     ctx.fillRect(-4 + (step ? 1 : 0), -1, 4, 1);
     ctx.fillRect(1 - (step ? 1 : 0), -1, 4, 1);
     // 상의 (재킷)
-    ctx.fillStyle = '#2f3a5e';
+    ctx.fillStyle = jacket;
     ctx.fillRect(-5, -12, 10, 8);
-    ctx.fillStyle = '#3b4875';
+    ctx.fillStyle = shade(color, 0.8);
     ctx.fillRect(-5, -12, 2, 8);
     // 셔츠 + 넥타이
     ctx.fillStyle = '#e8ecf7';
@@ -648,11 +961,11 @@
     ctx.fillStyle = '#d4574f';
     ctx.fillRect(0, -11, 1, 4);
     // 팔
-    ctx.fillStyle = '#2a3454';
+    ctx.fillStyle = jacket2;
     ctx.fillRect(-6, -11, 2, 5 + (walking ? (step ? 1 : 0) : 0));
     ctx.fillRect(4, -11, 2, 5 + (walking ? (step ? 0 : 1) : 0));
     // 명찰
-    ctx.fillStyle = C.yellow;
+    ctx.fillStyle = color;
     ctx.fillRect(2, -11, 2, 2);
     // 머리
     ctx.fillStyle = '#f0c8a0';
@@ -662,13 +975,72 @@
     ctx.fillRect(-5, -18, 2, 4);
     ctx.fillStyle = '#2e3250';
     ctx.fillRect(-4, -18, 3, 1);
-    // 눈
     ctx.fillStyle = '#1b1f2e';
     ctx.fillRect(-2, -16, 1, 2);
     ctx.fillRect(2, -16, 1, 2);
     ctx.fillStyle = '#d8a888';
     ctx.fillRect(-1, -14, 3, 1);
     ctx.restore();
+  }
+
+  // 초대된 다른 피클: 색과 모양만 다른 작은 픽셀 생명체
+  function drawBlob(a, color, shape, time) {
+    const x = Math.round(a.x), y = Math.round(a.y);
+    const walking = a.state === 'walk';
+    const step = walking ? Math.floor(time * 8) % 2 : 0;
+    const bob = walking ? (step ? 1 : 0) : (Math.sin(time * 1.8) > 0.7 ? 1 : 0);
+    const yy = y - bob;
+
+    ctx.save();
+    ctx.translate(x, yy);
+    if (a.dir < 0) ctx.scale(-1, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(-6, 0, 12, 2);
+    // 발
+    ctx.fillStyle = shade(color, 0.65);
+    ctx.fillRect(-4 + (step ? 1 : 0), -3, 3, 4);
+    ctx.fillRect(1 - (step ? 1 : 0), -3, 3, 4);
+
+    if (shape === 'ci') {
+      // 둥근 몸
+      ctx.fillStyle = color;
+      ctx.fillRect(-5, -15, 10, 12);
+      ctx.fillRect(-6, -12, 12, 7);
+      ctx.fillStyle = shade(color, 1.3);
+      ctx.fillRect(-4, -14, 3, 3);
+      ctx.fillStyle = shade(color, 0.7);
+      ctx.fillRect(-5, -4, 10, 1);
+    } else {
+      // 네모 몸 (sq / 기타)
+      ctx.fillStyle = color;
+      ctx.fillRect(-5, -15, 10, 12);
+      ctx.fillStyle = shade(color, 1.3);
+      ctx.fillRect(-4, -14, 2, 3);
+      ctx.fillRect(-4, -10, 1, 4);
+      ctx.fillStyle = shade(color, 0.7);
+      ctx.fillRect(3, -14, 2, 2);
+      ctx.fillRect(-5, -4, 10, 1);
+    }
+    // 눈
+    ctx.fillStyle = '#1b1f2e';
+    const blink = (time % 3.7) < 0.1;
+    if (blink) {
+      ctx.fillRect(-3, -10, 2, 1);
+      ctx.fillRect(1, -10, 2, 1);
+    } else {
+      ctx.fillRect(-3, -11, 2, 2);
+      ctx.fillRect(1, -11, 2, 2);
+    }
+    ctx.restore();
+  }
+
+  function drawActor(a, time) {
+    const m = a.member || {};
+    const color = m.color || '#facc15';
+    if (m.shape === 'ㄷ') drawD(a, color, time);
+    else if (m.shape === 'mgr') drawMgr(a, color, time);
+    else drawBlob(a, color, m.shape || 'sq', time);
   }
 
   function blocked(x, y) {
@@ -681,7 +1053,7 @@
   }
 
   function randomSpot(zoneKey) {
-    const z = ZONES[zoneKey];
+    const z = ZONES[zoneKey] || ZONES.board;
     for (let i = 0; i < 24; i++) {
       const x = z.x + 8 + Math.random() * (z.w - 16);
       const y = z.y + 10 + Math.random() * (z.h - 16);
@@ -690,21 +1062,43 @@
     return { x: z.spot.x, y: z.spot.y };
   }
 
-  function focusActor(zoneKey) {
-    const z = ZONES[zoneKey];
-    const a = actors.danmuji;
-    const spot = randomSpot(zoneKey);
-    a.target = { x: spot.x, y: Math.max(spot.y, z.y + 16) };
-    a.state = 'walk';
-    a.zone = ZONE_KEY[zoneKey];
-    // 황가람님 캐릭터도 조금 따라온다
-    const u = actors.user;
-    if (Math.random() < 0.55) {
-      const s2 = { x: z.spot.x + (Math.random() - 0.5) * 18, y: z.spot.y + 8 };
-      u.target = blocked(s2.x, s2.y) ? { x: z.spot.x, y: z.spot.y } : s2;
-      u.state = 'walk';
-      u.zone = ZONE_KEY[zoneKey];
-    }
+  function syncActors() {
+    const ms = memberList();
+    const keep = {};
+    ms.forEach(function (m) { keep[mid(m)] = true; });
+    Object.keys(actors).forEach(function (id) { if (!keep[id]) delete actors[id]; });
+
+    ms.forEach(function (m, i) {
+      const id = mid(m);
+      if (!actors[id]) {
+        const zone = ZONE_OF[m.zone] || 'board';
+        const spot = randomSpot(zone);
+        actors[id] = {
+          id: id, member: m,
+          x: spot.x + (i * 3), y: spot.y,
+          dir: 1, target: null, state: 'idle', t: 0,
+          next: 2 + Math.random() * 3, zone: zone,
+          bubble: '', bubbleT: 0
+        };
+      }
+      actors[id].member = m;
+    });
+    actorList = ms.map(function (m) { return actors[mid(m)]; }).filter(Boolean);
+    rebuildBubbles();
+    paintBubbles();
+  }
+
+  function focusActors(zoneKey) {
+    const key = ZONE_OF[zoneKey] || zoneKey;
+    const z = ZONES[key];
+    if (!z) return;
+    actorList.forEach(function (a, i) {
+      if (i > 0 && Math.random() < 0.45) return;
+      const spot = randomSpot(key);
+      a.target = { x: spot.x, y: Math.max(spot.y, z.y + 16) };
+      a.state = 'walk';
+      a.zone = key;
+    });
   }
 
   function updateActor(a, dt, time) {
@@ -719,7 +1113,6 @@
       } else {
         const sp = 26 * dt;
         const before = { x: a.x, y: a.y };
-        // x축 먼저, 막히면 y축으로 미끄러진다
         if (Math.abs(dx) > 0.6) {
           const nx = a.x + Math.sign(dx) * Math.min(Math.abs(dx), sp);
           if (!blocked(nx, a.y)) { a.x = nx; a.dir = dx > 0 ? 1 : -1; }
@@ -729,7 +1122,6 @@
           if (!blocked(a.x, ny)) a.y = ny;
         }
         a.state = 'walk';
-        // 거의 못 움직이면 목표를 버린다
         const moved = Math.abs(a.x - before.x) + Math.abs(a.y - before.y);
         a.stuck = moved < 0.15 ? (a.stuck || 0) + dt : 0;
         if (a.stuck > 0.5) {
@@ -743,9 +1135,9 @@
       a.t += dt;
       if (a.t > a.next) {
         const keys = Object.keys(ZONES);
-        const key = Math.random() < 0.45 ? ZONE_OF[a.zone] || 'board' : keys[Math.floor(Math.random() * keys.length)];
+        const key = (Math.random() < 0.45 && ZONES[a.zone]) ? a.zone : keys[Math.floor(Math.random() * keys.length)];
         a.target = randomSpot(key);
-        a.zone = ZONE_KEY[key];
+        a.zone = key;
         a.state = 'walk';
       }
     }
@@ -755,41 +1147,25 @@
     }
   }
 
-  const BUBBLE_POOLS = { danmuji: [], user: [] };
+  const bubblePool = [];
   function refreshBubblePool() {
     const active = state.tasks.filter(function (t) { return t.status === 'active'; });
     const store = active.filter(function (t) { return t.zone === 'store'; }).length;
     const life = active.filter(function (t) { return t.zone === 'life'; }).length;
     const board = active.filter(function (t) { return t.zone === 'board'; }).length;
-    const pool = [];
-    if (store) pool.push('매장 업무 ' + store + '건 확인 중');
-    if (board) pool.push('현황판 정리 중');
-    if (life) pool.push('일상·위스키 쪽 챙기는 중');
-    pool.push('할 일 정리 중', '잠깐 숨 고르는 중', '커피 한 모금', '메모 남기는 중');
-    BUBBLE_POOLS.danmuji = pool;
-    BUBBLE_POOLS.user = ['확인 중…', '고고', '오늘도 화이팅', '읽는 중…'];
+    bubblePool.length = 0;
+    if (store) bubblePool.push('매장 업무 ' + store + '건 확인 중');
+    if (board) bubblePool.push('현황판 정리 중');
+    if (life) bubblePool.push('일상·위스키 쪽 챙기는 중');
+    const open = state.requests.filter(function (x) { return x.status !== 'done'; }).length;
+    if (open) bubblePool.push('지시 ' + open + '건 처리 중');
+    bubblePool.push('할 일 정리 중', '잠깐 숨 고르는 중', '커피 한 모금', '메모 남기는 중');
   }
 
   let bubbleTimer = 0;
-  function bubbleSay(who, text) {
-    actors[who].bubble = text;
-    actors[who].bubbleT = 4.2;
-    paintBubbles();
-  }
-
-  function updateBubbles(dt) {
-    bubbleTimer += dt;
-    if (bubbleTimer > 6.5) {
-      bubbleTimer = 0;
-      const pool = BUBBLE_POOLS.danmuji;
-      if (pool.length && Math.random() < 0.75) bubbleSay('danmuji', pool[Math.floor(Math.random() * pool.length)]);
-      else if (Math.random() < 0.35) bubbleSay('user', BUBBLE_POOLS.user[Math.floor(Math.random() * BUBBLE_POOLS.user.length)]);
-    }
-    paintBubbles();
-  }
-
   const overlay = document.getElementById('overlay');
-  let bubbleEls = null;
+  let bubbleEls = {};
+  let tagEls = {};
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function buildOverlay() {
@@ -816,30 +1192,75 @@
       overlay.appendChild(label);
     });
 
-    bubbleEls = {
-      danmuji: document.createElement('div'),
-      user: document.createElement('div')
-    };
-    Object.keys(bubbleEls).forEach(function (k) {
-      const el = bubbleEls[k];
-      el.className = 'bubble ' + k;
-      el.style.opacity = '0';
-      overlay.appendChild(el);
+    bubbleEls = {};
+    tagEls = {};
+  }
+
+  function rebuildBubbles() {
+    Object.keys(bubbleEls).forEach(function (k) { if (bubbleEls[k].parentNode) bubbleEls[k].parentNode.removeChild(bubbleEls[k]); });
+    Object.keys(tagEls).forEach(function (k) { if (tagEls[k].parentNode) tagEls[k].parentNode.removeChild(tagEls[k]); });
+    bubbleEls = {};
+    tagEls = {};
+
+    memberList().forEach(function (m, i) {
+      const k = mid(m);
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.style.opacity = '0';
+      b.style.background = '#f7f5ea';
+      b.style.borderBottom = '2px solid ' + m.color;
+      overlay.appendChild(b);
+      bubbleEls[k] = b;
+
+      const t = document.createElement('div');
+      t.className = 'name-tag';
+      t.textContent = m.name;
+      t.style.borderColor = m.color;
+      t.style.color = m.color;
+      overlay.appendChild(t);
+      tagEls[k] = t;
     });
   }
 
   function paintBubbles() {
-    if (!bubbleEls) return;
-    Object.keys(bubbleEls).forEach(function (k) {
-      const a = actors[k];
+    actorList.forEach(function (a) {
+      const k = a.id;
       const el = bubbleEls[k];
+      const tag = tagEls[k];
+      if (tag) {
+        tag.style.left = (a.x / W * 100) + '%';
+        tag.style.top = ((a.y + 1) / H * 100) + '%';
+      }
+      if (!el) return;
       if (!a.bubble) { el.style.opacity = '0'; return; }
       el.style.opacity = '1';
       el.textContent = a.bubble;
-      const headY = k === 'danmuji' ? a.y - 20 : a.y - 24;
       el.style.left = (a.x / W * 100) + '%';
-      el.style.top = ((headY - 4) / H * 100) + '%';
+      el.style.top = ((a.y - 22) / H * 100) + '%';
     });
+  }
+
+  function bubbleSay(a, text) {
+    if (!a) return;
+    a.bubble = text;
+    a.bubbleT = 4.2;
+    paintBubbles();
+  }
+
+  function updateBubbles(dt) {
+    bubbleTimer += dt;
+    if (bubbleTimer > 6.5) {
+      bubbleTimer = 0;
+      if (actorList.length && Math.random() < 0.75) {
+        const ai = actorList.filter(function (a) { return a.member && a.member.role === 'ai'; });
+        const pick = (ai.length ? ai : actorList)[Math.floor(Math.random() * (ai.length ? ai.length : actorList.length))];
+        if (pick) {
+          const st = (pick.member && pick.member.statusText) || '';
+          bubbleSay(pick, st && Math.random() < 0.5 ? st : (bubblePool[Math.floor(Math.random() * bubblePool.length)] || '정리 중'));
+        }
+      }
+    }
+    paintBubbles();
   }
 
   /* ── 메인 루프 ── */
@@ -866,24 +1287,101 @@
     ctx.fillRect(32 - Math.round(st), 22, 1, 3);
 
     if (!reduceMotion) {
-      updateActor(actors.danmuji, dt, time);
-      updateActor(actors.user, dt, time);
+      actorList.forEach(function (a) { updateActor(a, dt, time); });
     }
 
-    // y 순서대로 그리기
-    const drawList = [actors.danmuji, actors.user].sort(function (a, b) { return a.y - b.y; });
-    drawList.forEach(function (a) {
-      if (a === actors.danmuji) drawDanmuji(a, time);
-      else drawUser(a, time);
-    });
+    const drawList = actorList.slice().sort(function (a, b) { return a.y - b.y; });
+    drawList.forEach(function (a) { drawActor(a, time); });
 
     updateBubbles(dt);
     requestAnimationFrame(frame);
   }
 
+  /* ─────────────────────────── 새로고침 ─────────────────────────── */
+  async function refresh(silent) {
+    if (!hasRemote()) {
+      state.remote = false;
+      if (!silent) setSync(null, '로컬 저장');
+      return;
+    }
+    state.remote = true;
+    try {
+      const data = await remoteList();
+      applySnapshot(data);
+      state.demo = false;
+      setSync(true, '동기화됨');
+      syncActors();
+      render();
+    } catch (e) {
+      setSync(false, '오프라인');
+      if (!state.tasks.length) {
+        const local = loadLocal();
+        if (local) {
+          state.tasks = normalizeTasks(local.tasks);
+          state.requests = normalizeRequests(local.requests);
+          state.members = normalizeMembers(local.members);
+          syncActors();
+          render();
+        }
+      }
+    }
+  }
+
+  /* ─────────────────────────── 초대 문구 ─────────────────────────── */
+  function syncLink() {
+    if (!hasRemote()) return '';
+    try {
+      const o = { u: state.cfg.url, p: state.cfg.pin };
+      const b = btoa(unescape(encodeURIComponent(JSON.stringify(o))))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      return location.origin + location.pathname + '#sync=' + b;
+    } catch (e) { return ''; }
+  }
+
+  function inviteNote() {
+    const link = syncLink();
+    if (!link) return '동기화를 먼저 연결하면 초대 문구가 만들어집니다.';
+    return '피클 오피스에 초대해요!\n' + link + '\n이 링크를 한 번 열면 같은 오피스에 캐릭터로 합류합니다.';
+  }
+
+  async function copyInvite() {
+    const text = $('inviteNote').value;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('초대 문구를 복사했어요');
+    } catch (e) {
+      const ta = $('inviteNote');
+      ta.removeAttribute('readonly');
+      ta.select();
+      try { document.execCommand('copy'); toast('초대 문구를 복사했어요'); }
+      catch (e2) { toast('복사가 안 되면 문구를 길게 눌러 복사해 주세요'); }
+      ta.setAttribute('readonly', 'readonly');
+    }
+  }
+
   /* ─────────────────────────── UI 배선 ─────────────────────────── */
-  function openSheet() {
-    // 모바일에서는 현황판이 맵 아래에 항상 펼쳐져 있다.
+  function fillAssigneeOptions() {
+    const sel = $('newAssignee');
+    const prev = sel.value;
+    sel.textContent = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = '담당 없음';
+    sel.appendChild(none);
+    memberList().forEach(function (m) {
+      const o = document.createElement('option');
+      o.value = m.name;
+      o.textContent = '@' + m.name;
+      sel.appendChild(o);
+    });
+    const ai = firstAi();
+    sel.value = (prev && memberList().some(function (m) { return m.name === prev; })) ? prev : (ai ? ai.name : '');
+  }
+
+  function switchTab(tab) {
+    state.tab = tab;
+    renderTabs();
+    if (tab === 'inbox' && hasRemote()) refresh(true);
   }
 
   function initUI() {
@@ -893,21 +1391,33 @@
       b.addEventListener('click', function () { setFilter(b.dataset.zone); });
     });
 
+    $('tabTasks').addEventListener('click', function () { switchTab('tasks'); });
+    $('tabInbox').addEventListener('click', function () { switchTab('inbox'); });
+
     $('addForm').addEventListener('submit', function (e) {
       e.preventDefault();
       const input = $('newTitle');
       const title = input.value.trim();
       if (!title) return;
-      addTask(title, $('newZone').value);
+      addTask(title, $('newZone').value, $('newAssignee').value);
       input.value = '';
-      openSheet(true);
     });
 
     $('clearFilter').addEventListener('click', function () { state.filter = null; render(); });
 
     $('panelGrip').addEventListener('click', function () {
-      const p = $('panel');
-      p.classList.toggle('open');
+      $('panel').classList.toggle('open');
+    });
+
+    $('reqForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      sendRequest();
+    });
+
+    $('reqRefresh').addEventListener('click', async function () {
+      if (!hasRemote()) { toast('동기화를 먼저 연결해 주세요'); return; }
+      await refresh(true);
+      toast('새로고침했어요');
     });
 
     // 설정 모달
@@ -916,10 +1426,12 @@
       $('cfgUrl').value = state.cfg.url;
       $('cfgPin').value = state.cfg.pin;
       $('cfgMsg').hidden = true;
+      renderMembers();
       modal.hidden = false;
     });
     $('cfgClose').addEventListener('click', function () { modal.hidden = true; });
     modal.addEventListener('click', function (e) { if (e.target === modal) modal.hidden = true; });
+    $('copyInvite').addEventListener('click', copyInvite);
 
     $('cfgSave').addEventListener('click', async function () {
       const url = $('cfgUrl').value.trim();
@@ -935,18 +1447,19 @@
       state.cfg = { url: url, pin: pin };
       msg.textContent = '확인 중…';
       try {
-        const list = await remoteList();
-        state.tasks = list;
+        const data = await remoteList();
         state.remote = true;
         state.demo = false;
+        applySnapshot(data);
         saveCfg();
-        saveLocal();
         setSync(true, '동기화됨');
+        syncActors();
         render();
-        msg.textContent = '연결됐어요 · 할 일 ' + list.length + '건';
+        msg.textContent = '연결됐어요 · 할 일 ' + state.tasks.length + '건 · 지시 ' + state.requests.length + '건 · 멤버 ' + memberList().length + '명';
         msg.classList.add('ok');
-        setTimeout(function () { modal.hidden = true; }, 900);
-        bubbleSay('danmuji', '동기화 연결 완료!');
+        setTimeout(function () { modal.hidden = true; }, 1100);
+        const a = aiActor();
+        if (a) bubbleSay(a, '동기화 연결 완료!');
       } catch (e) {
         msg.textContent = '연결하지 못했어요. 주소와 PIN을 확인해 주세요. (' + e.message + ')';
         msg.classList.add('err');
@@ -960,8 +1473,9 @@
       saveCfg();
       setSync(null, '로컬 저장');
       $('settingsModal').hidden = true;
-      toast('동기화를 해제했어요. 이 기기에 저장된 할 일만 보입니다.');
+      toast('동기화를 해제했어요. 이 기기에 저장된 내용만 보입니다.');
       render();
+      renderMembers();
     });
 
     // 캐릭터 클릭(맵 위 아무 곳) — 캐릭터 근처를 누르면 인사
@@ -969,15 +1483,20 @@
       const rect = canvas.getBoundingClientRect();
       const mx = (e.clientX - rect.left) / rect.width * W;
       const my = (e.clientY - rect.top) / rect.height * H;
-      const d = Math.hypot(mx - actors.danmuji.x, my - (actors.danmuji.y - 8));
-      const u = Math.hypot(mx - actors.user.x, my - (actors.user.y - 8));
-      if (d < 12) { bubbleSay('danmuji', '네, 부르셨나요? 😊'); return; }
-      if (u < 12) { bubbleSay('user', '확인하고 있어요'); return; }
-      // 빈 바닥을 누르면 그쪽으로 걸어간다
-      if (!blocked(mx, my)) {
-        actors.danmuji.target = { x: mx, y: my };
-        actors.danmuji.state = 'walk';
-        bubbleSay('danmuji', '갑니다~');
+      let hit = null, best = 13;
+      actorList.forEach(function (a) {
+        const d = Math.hypot(mx - a.x, my - (a.y - 9));
+        if (d < best) { best = d; hit = a; }
+      });
+      if (hit) {
+        bubbleSay(hit, hit.member.role === 'owner' ? '확인하고 있어요' : '네, 부르셨나요? 😊');
+        return;
+      }
+      const ai = aiActor();
+      if (ai && !blocked(mx, my)) {
+        ai.target = { x: mx, y: my };
+        ai.state = 'walk';
+        bubbleSay(ai, '갑니다~');
       }
     });
 
@@ -987,8 +1506,13 @@
 
     // 다른 탭에서 돌아오면 최신 상태로
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible' && hasRemote()) refresh();
+      if (document.visibilityState === 'visible' && hasRemote()) refresh(true);
     });
+
+    // 지시 회신을 놓치지 않도록 가볍게 주기 확인
+    setInterval(function () {
+      if (document.visibilityState === 'visible' && hasRemote()) refresh(true);
+    }, 20000);
   }
 
   /* ─────────────────────────── 시작 ─────────────────────────── */
@@ -999,30 +1523,40 @@
     initUI();
 
     const local = loadLocal();
-    if (local && local.tasks.length) {
-      state.tasks = local.tasks;
+    if (local && local.tasks && local.tasks.length) {
+      state.tasks = normalizeTasks(local.tasks);
+      state.requests = normalizeRequests(local.requests);
+      state.members = normalizeMembers(local.members);
     } else if (!hasRemote()) {
-      state.tasks = DEMO_TASKS.slice();
+      state.tasks = normalizeTasks(DEMO_TASKS);
+      state.requests = [];
+      state.members = normalizeMembers(DEFAULT_MEMBERS);
       state.demo = true;
       saveLocal();
+    } else {
+      state.members = normalizeMembers(DEFAULT_MEMBERS);
     }
 
+    syncActors();
+    fillAssigneeOptions();
     render();
+
     requestAnimationFrame(frame);
 
     setTimeout(function () {
-      bubbleSay('danmuji', BUBBLE_POOLS.danmuji[0] || '문 열었어요, 오늘도 화이팅!');
+      const a = aiActor();
+      if (a) bubbleSay(a, bubblePool[0] || '문 열었어요, 오늘도 화이팅!');
     }, 900);
 
     if (hasRemote()) {
       setSync(null, '연결 중');
-      refresh();
+      refresh(false);
     } else {
       setSync(null, '로컬 저장');
     }
 
     $('footRight').textContent = navigator.onLine ? '' : '오프라인';
-    window.addEventListener('online', function () { if (hasRemote()) refresh(); });
+    window.addEventListener('online', function () { if (hasRemote()) refresh(true); });
     window.addEventListener('offline', function () { setSync(false, '오프라인'); });
   }
 

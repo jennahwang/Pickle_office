@@ -68,7 +68,8 @@
     demo: false,
     reqTarget: '',
     editingNote: null,
-    sending: false
+    sending: false,
+    lastFilter: undefined
   };
 
   const DEMO_TASKS = [
@@ -421,7 +422,11 @@
     document.querySelectorAll('.zone-hit').forEach(function (h) {
       h.classList.toggle('active', h.dataset.zone === z);
     });
-    $('newZone').value = z || 'store';
+    // 존 선택은 필터가 바뀔 때만 따라간다(입력 중인 선택을 주기 갱신이 지우지 않게)
+    if (state.lastFilter !== z) {
+      state.lastFilter = z;
+      $('newZone').value = z || 'store';
+    }
 
     refreshBubblePool();
   }
@@ -1298,6 +1303,16 @@
   }
 
   /* ─────────────────────────── 새로고침 ─────────────────────────── */
+  function snapKey() {
+    return [
+      state.tasks.map(function (t) { return [t.id, t.status, t.note, t.assignee, t.title, t.due].join('~'); }).join('|'),
+      state.requests.map(function (r) { return [r.id, r.status, r.reply, r.updatedAt].join('~'); }).join('|'),
+      state.members.map(function (m) { return [m.id, m.name, m.color, m.shape, m.statusText].join('~'); }).join('|')
+    ].join('#');
+  }
+
+  let lastSnap = null;
+
   async function refresh(silent) {
     if (!hasRemote()) {
       state.remote = false;
@@ -1310,8 +1325,12 @@
       applySnapshot(data);
       state.demo = false;
       setSync(true, '동기화됨');
-      syncActors();
-      render();
+      const key = snapKey();
+      if (key !== lastSnap) {
+        lastSnap = key;
+        syncActors();
+        render();
+      }
     } catch (e) {
       setSync(false, '오프라인');
       if (!state.tasks.length) {

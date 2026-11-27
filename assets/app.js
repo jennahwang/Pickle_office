@@ -675,7 +675,7 @@
     if (x < 12 || x > 308 || y < 30 || y > 188) return true;
     for (let i = 0; i < OBSTACLES.length; i++) {
       const o = OBSTACLES[i];
-      if (x > o.x - 5 && x < o.x + o.w + 5 && y > o.y - 2 && y < o.y + o.h + 6) return true;
+      if (x > o.x - 5 && x < o.x + o.w + 5 && y > o.y - 8 && y < o.y + o.h + 6) return true;
     }
     return false;
   }
